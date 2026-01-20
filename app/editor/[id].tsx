@@ -1,11 +1,150 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
-import { View, StyleSheet, TextInput, Pressable, Keyboard } from 'react-native';
+import { View, StyleSheet, TextInput, Pressable, Keyboard, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { Text, IconButton } from '@/components/common';
-import { colors, spacing, borderRadius, icons } from '@/theme';
+import { colors, spacing, borderRadius, icons, typography } from '@/theme';
 import { useDocuments, useVersions } from '@/hooks';
+
+// Simple Markdown renderer
+function MarkdownPreview({ content }: { content: string }) {
+  const lines = content.split('\n');
+
+  return (
+    <ScrollView style={previewStyles.container} showsVerticalScrollIndicator={false}>
+      {lines.map((line, index) => {
+        // Heading 1
+        if (line.startsWith('# ')) {
+          return (
+            <Text key={index} style={previewStyles.h1}>
+              {line.slice(2)}
+            </Text>
+          );
+        }
+        // Heading 2
+        if (line.startsWith('## ')) {
+          return (
+            <Text key={index} style={previewStyles.h2}>
+              {line.slice(3)}
+            </Text>
+          );
+        }
+        // Heading 3
+        if (line.startsWith('### ')) {
+          return (
+            <Text key={index} style={previewStyles.h3}>
+              {line.slice(4)}
+            </Text>
+          );
+        }
+        // Bullet list
+        if (line.startsWith('- ') || line.startsWith('* ')) {
+          return (
+            <View key={index} style={previewStyles.listItem}>
+              <Text style={previewStyles.bullet}>•</Text>
+              <Text style={previewStyles.listText}>{renderInlineMarkdown(line.slice(2))}</Text>
+            </View>
+          );
+        }
+        // Numbered list
+        if (/^\d+\.\s/.test(line)) {
+          const match = line.match(/^(\d+)\.\s(.*)$/);
+          if (match) {
+            return (
+              <View key={index} style={previewStyles.listItem}>
+                <Text style={previewStyles.number}>{match[1]}.</Text>
+                <Text style={previewStyles.listText}>{renderInlineMarkdown(match[2])}</Text>
+              </View>
+            );
+          }
+        }
+        // Code block
+        if (line.startsWith('```')) {
+          return null; // Skip code fence markers
+        }
+        // Blockquote
+        if (line.startsWith('> ')) {
+          return (
+            <View key={index} style={previewStyles.blockquote}>
+              <Text style={previewStyles.blockquoteText}>{line.slice(2)}</Text>
+            </View>
+          );
+        }
+        // Horizontal rule
+        if (line === '---' || line === '***') {
+          return <View key={index} style={previewStyles.hr} />;
+        }
+        // Empty line
+        if (line.trim() === '') {
+          return <View key={index} style={previewStyles.emptyLine} />;
+        }
+        // Regular paragraph
+        return (
+          <Text key={index} style={previewStyles.paragraph}>
+            {renderInlineMarkdown(line)}
+          </Text>
+        );
+      })}
+      <View style={previewStyles.bottomPadding} />
+    </ScrollView>
+  );
+}
+
+// Render inline markdown (bold, italic, code, links)
+function renderInlineMarkdown(text: string): React.ReactNode {
+  // For simplicity, just return text with basic styling hints
+  // A full implementation would parse and render inline elements
+  const parts: React.ReactNode[] = [];
+  let remaining = text;
+  let key = 0;
+
+  // Bold **text**
+  const boldRegex = /\*\*(.+?)\*\*/g;
+  // Italic _text_ or *text*
+  const italicRegex = /[_*](.+?)[_*]/g;
+  // Code `text`
+  const codeRegex = /`(.+?)`/g;
+
+  // Simple approach: just render as text for now
+  // Complex parsing would require a proper tokenizer
+  let match;
+
+  // Replace code
+  remaining = remaining.replace(codeRegex, (_, p1) => `⟨${p1}⟩`);
+  // Replace bold (must come before italic to handle ***text***)
+  remaining = remaining.replace(boldRegex, (_, p1) => `【${p1}】`);
+  // Replace italic
+  remaining = remaining.replace(italicRegex, (_, p1) => `《${p1}》`);
+
+  // Now render with styling
+  const segments = remaining.split(/(【.+?】|《.+?》|⟨.+?⟩)/);
+
+  return segments.map((segment, i) => {
+    if (segment.startsWith('【') && segment.endsWith('】')) {
+      return (
+        <Text key={i} style={previewStyles.bold}>
+          {segment.slice(1, -1)}
+        </Text>
+      );
+    }
+    if (segment.startsWith('《') && segment.endsWith('》')) {
+      return (
+        <Text key={i} style={previewStyles.italic}>
+          {segment.slice(1, -1)}
+        </Text>
+      );
+    }
+    if (segment.startsWith('⟨') && segment.endsWith('⟩')) {
+      return (
+        <Text key={i} style={previewStyles.inlineCode}>
+          {segment.slice(1, -1)}
+        </Text>
+      );
+    }
+    return segment;
+  });
+}
 
 export default function EditorScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -17,6 +156,7 @@ export default function EditorScreen() {
   const [content, setContent] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [charCount, setCharCount] = useState(0);
+  const [showPreview, setShowPreview] = useState(false);
 
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSavedContentRef = useRef<string>('');
@@ -93,11 +233,22 @@ export default function EditorScreen() {
     await createManualSnapshot(content);
   };
 
+  const handleOpenPrompts = () => {
+    router.push(`/prompts?select=true&documentId=${id}`);
+  };
+
   const insertMarkdown = (syntax: string, wrap = false) => {
     if (wrap) {
       setContent((prev) => `${syntax}${prev}${syntax}`);
     } else {
       setContent((prev) => `${prev}${syntax}`);
+    }
+  };
+
+  const togglePreview = () => {
+    setShowPreview(!showPreview);
+    if (!showPreview) {
+      Keyboard.dismiss();
     }
   };
 
@@ -114,6 +265,7 @@ export default function EditorScreen() {
               onChangeText={setTitle}
               placeholder="タイトルを入力"
               placeholderTextColor={colors.text.muted}
+              editable={!showPreview}
             />
             <View style={styles.branchInfo}>
               <Feather name="hard-drive" size={12} color={colors.text.muted} />
@@ -121,7 +273,7 @@ export default function EditorScreen() {
             </View>
           </View>
         </View>
-        <Pressable style={styles.aiButton}>
+        <Pressable style={styles.aiButton} onPress={handleOpenPrompts}>
           <Feather name="zap" size={icons.size.sm} color={colors.primary} />
           <Text variant="caption" color="brand">AI</Text>
         </Pressable>
@@ -142,42 +294,64 @@ export default function EditorScreen() {
             </>
           )}
         </View>
-        <Text variant="micro" color="muted">{charCount.toLocaleString()} 文字</Text>
+        <View style={styles.syncRight}>
+          {showPreview && (
+            <View style={styles.previewBadge}>
+              <Text variant="micro" color="brand">プレビュー</Text>
+            </View>
+          )}
+          <Text variant="micro" color="muted">{charCount.toLocaleString()} 文字</Text>
+        </View>
       </View>
 
-      {/* Editor */}
-      <View style={styles.editorContainer}>
-        <TextInput
-          style={styles.editor}
-          multiline
-          value={content}
-          onChangeText={handleContentChange}
-          placeholder="ここに内容を入力..."
-          placeholderTextColor={colors.text.muted}
-          textAlignVertical="top"
-        />
-      </View>
+      {/* Editor or Preview */}
+      {showPreview ? (
+        <MarkdownPreview content={content} />
+      ) : (
+        <View style={styles.editorContainer}>
+          <TextInput
+            style={styles.editor}
+            multiline
+            value={content}
+            onChangeText={handleContentChange}
+            placeholder="ここに内容を入力..."
+            placeholderTextColor={colors.text.muted}
+            textAlignVertical="top"
+          />
+        </View>
+      )}
 
       {/* Toolbar */}
       <View style={styles.toolbar}>
         <View style={styles.toolbarLeft}>
-          <IconButton name="bold" size="sm" onPress={() => insertMarkdown('**', true)} />
-          <IconButton name="italic" size="sm" onPress={() => insertMarkdown('_', true)} />
-          <IconButton name="hash" size="sm" onPress={() => insertMarkdown('# ')} />
-          <IconButton name="list" size="sm" onPress={() => insertMarkdown('- ')} />
-          <IconButton name="link" size="sm" onPress={() => insertMarkdown('[](url)')} />
-          <IconButton name="code" size="sm" onPress={() => insertMarkdown('`', true)} />
-          {canCreateManualSnapshot && (
-            <IconButton
-              name="save"
-              size="sm"
-              color={colors.primary}
-              onPress={handleManualSnapshot}
-            />
+          {!showPreview && (
+            <>
+              <IconButton name="bold" size="sm" onPress={() => insertMarkdown('**', true)} />
+              <IconButton name="italic" size="sm" onPress={() => insertMarkdown('_', true)} />
+              <IconButton name="hash" size="sm" onPress={() => insertMarkdown('# ')} />
+              <IconButton name="list" size="sm" onPress={() => insertMarkdown('- ')} />
+              <IconButton name="link" size="sm" onPress={() => insertMarkdown('[](url)')} />
+              <IconButton name="code" size="sm" onPress={() => insertMarkdown('`', true)} />
+              {canCreateManualSnapshot && (
+                <IconButton
+                  name="save"
+                  size="sm"
+                  color={colors.primary}
+                  onPress={handleManualSnapshot}
+                />
+              )}
+            </>
           )}
         </View>
-        <Pressable style={styles.previewButton}>
-          <Feather name="eye" size={icons.size.sm} color={colors.text.inverse} />
+        <Pressable
+          style={[styles.previewButton, showPreview && styles.previewButtonActive]}
+          onPress={togglePreview}
+        >
+          <Feather
+            name={showPreview ? 'edit-2' : 'eye'}
+            size={icons.size.sm}
+            color={showPreview ? colors.primary : colors.text.inverse}
+          />
         </Pressable>
       </View>
     </SafeAreaView>
@@ -246,6 +420,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing[2],
   },
+  syncRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[3],
+  },
+  previewBadge: {
+    backgroundColor: colors.primaryLight,
+    paddingHorizontal: spacing[2],
+    paddingVertical: spacing[0.5],
+    borderRadius: borderRadius.sm,
+  },
   editorContainer: {
     flex: 1,
     padding: spacing[4],
@@ -277,5 +462,100 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  previewButtonActive: {
+    backgroundColor: colors.primaryLight,
+    borderWidth: 1,
+    borderColor: colors.primary,
+  },
+});
+
+const previewStyles = StyleSheet.create({
+  container: {
+    flex: 1,
+    padding: spacing[4],
+  },
+  h1: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: colors.text.primary,
+    marginBottom: spacing[4],
+    marginTop: spacing[2],
+  },
+  h2: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: colors.text.primary,
+    marginBottom: spacing[3],
+    marginTop: spacing[4],
+  },
+  h3: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: colors.text.primary,
+    marginBottom: spacing[2],
+    marginTop: spacing[3],
+  },
+  paragraph: {
+    fontSize: 16,
+    lineHeight: 24,
+    color: colors.text.primary,
+    marginBottom: spacing[3],
+  },
+  listItem: {
+    flexDirection: 'row',
+    marginBottom: spacing[2],
+  },
+  bullet: {
+    fontSize: 16,
+    color: colors.text.muted,
+    width: 20,
+  },
+  number: {
+    fontSize: 16,
+    color: colors.text.muted,
+    width: 24,
+  },
+  listText: {
+    flex: 1,
+    fontSize: 16,
+    lineHeight: 24,
+    color: colors.text.primary,
+  },
+  blockquote: {
+    borderLeftWidth: 3,
+    borderLeftColor: colors.primary,
+    paddingLeft: spacing[4],
+    marginVertical: spacing[3],
+  },
+  blockquoteText: {
+    fontSize: 16,
+    lineHeight: 24,
+    color: colors.text.secondary,
+    fontStyle: 'italic',
+  },
+  hr: {
+    height: 1,
+    backgroundColor: colors.border.light,
+    marginVertical: spacing[4],
+  },
+  emptyLine: {
+    height: spacing[3],
+  },
+  bold: {
+    fontWeight: '700',
+  },
+  italic: {
+    fontStyle: 'italic',
+  },
+  inlineCode: {
+    backgroundColor: colors.gray[100],
+    fontFamily: typography.fontFamily.mono,
+    fontSize: 14,
+    paddingHorizontal: 4,
+    borderRadius: 3,
+  },
+  bottomPadding: {
+    height: spacing[8],
   },
 });

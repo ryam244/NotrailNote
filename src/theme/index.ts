@@ -377,6 +377,11 @@ export const zIndex = {
 // MAIN THEME EXPORT
 // =============================================================================
 
+// Direct exports for convenience
+export const fontFamily = typography.fontFamily;
+export const fontSize = typography.fontSize;
+export const fontWeight = typography.fontWeight;
+
 export const theme = {
   colors,
   typography,

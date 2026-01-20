@@ -1,8 +1,8 @@
 import { useEffect, useCallback, useState } from 'react';
-import { View, StyleSheet, ScrollView, Pressable, RefreshControl } from 'react-native';
+import { View, StyleSheet, ScrollView, Pressable, RefreshControl, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
-import { Link, router } from 'expo-router';
+import { router } from 'expo-router';
 import { Text, Card } from '@/components/common';
 import { colors, spacing, borderRadius, shadows, icons } from '@/theme';
 import { useDocuments } from '@/hooks';
@@ -43,7 +43,7 @@ function SyncIcon({ status }: { status: 'synced' | 'pending' | 'local' }) {
 }
 
 export default function DashboardScreen() {
-  const { documents, isLoading, error, loadDocuments, createDocument, limits } = useDocuments();
+  const { documents, isLoading, error, loadDocuments, createDocument, deleteDocument, limits } = useDocuments();
   const [activeTab, setActiveTab] = useState<FilterTab>('all');
   const [refreshing, setRefreshing] = useState(false);
 
@@ -63,6 +63,23 @@ export default function DashboardScreen() {
       router.push(`/editor/${newDoc.id}`);
     }
   }, [createDocument]);
+
+  const handleDeleteDocument = useCallback((doc: Document) => {
+    Alert.alert(
+      '削除確認',
+      `「${doc.title}」を削除しますか？\nこの操作は取り消せません。`,
+      [
+        { text: 'キャンセル', style: 'cancel' },
+        {
+          text: '削除',
+          style: 'destructive',
+          onPress: async () => {
+            await deleteDocument(doc.id);
+          },
+        },
+      ]
+    );
+  }, [deleteDocument]);
 
   const filteredDocuments = documents.filter((doc) => {
     if (activeTab === 'all') return true;
@@ -155,51 +172,54 @@ export default function DashboardScreen() {
           filteredDocuments.map((doc) => {
             const syncStatus = getSyncStatus(doc);
             return (
-              <Link key={doc.id} href={`/editor/${doc.id}`} asChild>
-                <Pressable>
-                  <Card style={styles.fileCard}>
-                    <View
-                      style={[
-                        styles.fileIcon,
-                        {
-                          backgroundColor:
-                            syncStatus === 'synced'
-                              ? colors.primaryLight
-                              : syncStatus === 'pending'
-                              ? colors.warningLight
-                              : colors.gray[100],
-                        },
-                      ]}
-                    >
-                      <Feather
-                        name="file-text"
-                        size={20}
-                        color={
+              <Pressable
+                key={doc.id}
+                onPress={() => router.push(`/editor/${doc.id}`)}
+                onLongPress={() => handleDeleteDocument(doc)}
+                delayLongPress={500}
+              >
+                <Card style={styles.fileCard}>
+                  <View
+                    style={[
+                      styles.fileIcon,
+                      {
+                        backgroundColor:
                           syncStatus === 'synced'
-                            ? colors.primary
+                            ? colors.primaryLight
                             : syncStatus === 'pending'
-                            ? colors.warning
-                            : colors.text.muted
-                        }
-                      />
-                    </View>
-                    <View style={styles.fileInfo}>
-                      <Text variant="bodyBold" numberOfLines={1}>
-                        {doc.title}
-                      </Text>
-                      <Text variant="caption" color="secondary" numberOfLines={1}>
-                        {doc.content.slice(0, 50) || '(空のドキュメント)'}
-                      </Text>
-                    </View>
-                    <View style={styles.fileMeta}>
-                      <SyncIcon status={syncStatus} />
-                      <Text variant="micro" color="muted" style={styles.fileTime}>
-                        {formatRelativeTime(doc.updatedAt)}
-                      </Text>
-                    </View>
-                  </Card>
-                </Pressable>
-              </Link>
+                            ? colors.warningLight
+                            : colors.gray[100],
+                      },
+                    ]}
+                  >
+                    <Feather
+                      name="file-text"
+                      size={20}
+                      color={
+                        syncStatus === 'synced'
+                          ? colors.primary
+                          : syncStatus === 'pending'
+                          ? colors.warning
+                          : colors.text.muted
+                      }
+                    />
+                  </View>
+                  <View style={styles.fileInfo}>
+                    <Text variant="bodyBold" numberOfLines={1}>
+                      {doc.title}
+                    </Text>
+                    <Text variant="caption" color="secondary" numberOfLines={1}>
+                      {doc.content.slice(0, 50) || '(空のドキュメント)'}
+                    </Text>
+                  </View>
+                  <View style={styles.fileMeta}>
+                    <SyncIcon status={syncStatus} />
+                    <Text variant="micro" color="muted" style={styles.fileTime}>
+                      {formatRelativeTime(doc.updatedAt)}
+                    </Text>
+                  </View>
+                </Card>
+              </Pressable>
             );
           })
         )}

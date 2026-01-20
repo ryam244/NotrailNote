@@ -55,7 +55,8 @@ export interface UserSettings {
   fontSize: 'small' | 'medium' | 'large';
   focusMode: boolean;
   github?: {
-    enabled: boolean;
+    accessToken: string;
+    username: string;
     defaultRepo?: string;
     defaultBranch?: string;
   };

@@ -1,11 +1,14 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
-import { View, StyleSheet, TextInput, Pressable, Keyboard, ScrollView } from 'react-native';
+import { View, StyleSheet, TextInput, Pressable, Keyboard, ScrollView, Alert, Modal, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
-import { Text, IconButton } from '@/components/common';
+import { Text, IconButton, Card } from '@/components/common';
 import { colors, spacing, borderRadius, icons, typography } from '@/theme';
 import { useDocuments, useVersions } from '@/hooks';
+import { useSettingsStore } from '@/stores';
+import { syncDocument } from '@/services/githubSync';
+import { listRepositories, type GitHubRepo } from '@/services/github';
 
 // Simple Markdown renderer
 function MarkdownPreview({ content }: { content: string }) {
@@ -146,20 +149,101 @@ function renderInlineMarkdown(text: string): React.ReactNode {
   });
 }
 
+// Repository picker modal
+function RepoPicker({
+  visible,
+  onClose,
+  onSelect,
+  accessToken,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  onSelect: (repo: GitHubRepo) => void;
+  accessToken: string;
+}) {
+  const [repos, setRepos] = useState<GitHubRepo[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    if (visible && accessToken) {
+      setIsLoading(true);
+      listRepositories(accessToken)
+        .then(setRepos)
+        .finally(() => setIsLoading(false));
+    }
+  }, [visible, accessToken]);
+
+  return (
+    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet">
+      <SafeAreaView style={modalStyles.container}>
+        <View style={modalStyles.header}>
+          <Pressable onPress={onClose}>
+            <Text variant="body" color="secondary">キャンセル</Text>
+          </Pressable>
+          <Text variant="h4">リポジトリを選択</Text>
+          <View style={{ width: 60 }} />
+        </View>
+        <ScrollView style={modalStyles.content}>
+          {isLoading ? (
+            <View style={modalStyles.loading}>
+              <ActivityIndicator size="large" color={colors.primary} />
+              <Text variant="body" color="secondary" style={{ marginTop: spacing[3] }}>
+                読み込み中...
+              </Text>
+            </View>
+          ) : repos.length === 0 ? (
+            <View style={modalStyles.empty}>
+              <Feather name="inbox" size={48} color={colors.gray[300]} />
+              <Text variant="body" color="secondary" style={{ marginTop: spacing[3] }}>
+                リポジトリがありません
+              </Text>
+            </View>
+          ) : (
+            repos.map((repo) => (
+              <Pressable key={repo.id} onPress={() => onSelect(repo)}>
+                <Card style={modalStyles.repoCard}>
+                  <View style={modalStyles.repoIcon}>
+                    <Feather
+                      name={repo.private ? 'lock' : 'book-open'}
+                      size={20}
+                      color={colors.primary}
+                    />
+                  </View>
+                  <View style={modalStyles.repoInfo}>
+                    <Text variant="bodyBold">{repo.name}</Text>
+                    <Text variant="caption" color="secondary">{repo.full_name}</Text>
+                  </View>
+                  <Feather name="chevron-right" size={20} color={colors.text.muted} />
+                </Card>
+              </Pressable>
+            ))
+          )}
+        </ScrollView>
+      </SafeAreaView>
+    </Modal>
+  );
+}
+
 export default function EditorScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { currentDocument, getDocument, updateDocument } = useDocuments();
   const { createAutoSaveVersion, autoSaveIntervalSec, canCreateManualSnapshot, createManualSnapshot } =
     useVersions(id ?? null);
+  const { settings } = useSettingsStore();
 
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [charCount, setCharCount] = useState(0);
   const [showPreview, setShowPreview] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [showRepoPicker, setShowRepoPicker] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<'synced' | 'pending' | 'local'>('local');
 
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSavedContentRef = useRef<string>('');
+
+  const isGitHubConnected = !!settings.github?.accessToken;
 
   // ドキュメント読み込み
   useEffect(() => {
@@ -170,10 +254,71 @@ export default function EditorScreen() {
           setContent(doc.content);
           setCharCount(doc.content.length);
           lastSavedContentRef.current = doc.content;
+          setSyncStatus(doc.githubSync?.syncStatus ?? 'local');
         }
       });
     }
   }, [id, getDocument]);
+
+  // GitHub同期ハンドラー
+  const handleSync = useCallback(async (selectedRepo?: GitHubRepo) => {
+    if (!id || !settings.github?.accessToken) {
+      Alert.alert('エラー', 'GitHubと連携してください');
+      router.push('/auth/github');
+      return;
+    }
+
+    // Save current changes first
+    if (content !== lastSavedContentRef.current) {
+      await updateDocument(id, { title, content });
+      lastSavedContentRef.current = content;
+    }
+
+    // Get current document with sync info
+    const doc = await getDocument(id);
+    if (!doc) return;
+
+    // If no repo configured and none selected, show picker
+    const repoToUse = selectedRepo?.full_name || doc.githubSync?.repoPath?.split('/').slice(0, 2).join('/') || settings.github.defaultRepo;
+    if (!repoToUse) {
+      setShowRepoPicker(true);
+      return;
+    }
+
+    setIsSyncing(true);
+    setSyncStatus('pending');
+
+    try {
+      const [owner, repo] = repoToUse.split('/');
+      const result = await syncDocument(
+        { ...doc, title, content },
+        settings.github.accessToken,
+        owner,
+        repo,
+        doc.githubSync?.branch || 'main'
+      );
+
+      if (result.success) {
+        setSyncStatus('synced');
+        Alert.alert('同期完了', result.message);
+        // Reload to get updated sync info
+        getDocument(id);
+      } else {
+        setSyncStatus('pending');
+        Alert.alert('同期エラー', result.message);
+      }
+    } catch (error) {
+      setSyncStatus('pending');
+      Alert.alert('エラー', '同期中にエラーが発生しました');
+    } finally {
+      setIsSyncing(false);
+    }
+  }, [id, settings.github, content, title, updateDocument, getDocument]);
+
+  const handleRepoSelect = useCallback((repo: GitHubRepo) => {
+    setShowRepoPicker(false);
+    handleSync(repo);
+  }, [handleSync]);
 
   // 自動保存
   const triggerAutoSave = useCallback(async () => {
@@ -268,15 +413,38 @@ export default function EditorScreen() {
               editable={!showPreview}
             />
             <View style={styles.branchInfo}>
-              <Feather name="hard-drive" size={12} color={colors.text.muted} />
-              <Text variant="micro" color="muted">ローカル保存</Text>
+              <Feather
+                name={syncStatus === 'synced' ? 'cloud' : syncStatus === 'pending' ? 'refresh-cw' : 'hard-drive'}
+                size={12}
+                color={syncStatus === 'synced' ? colors.success : syncStatus === 'pending' ? colors.warning : colors.text.muted}
+              />
+              <Text variant="micro" color={syncStatus === 'synced' ? 'brand' : 'muted'}>
+                {syncStatus === 'synced' ? 'GitHub同期済' : syncStatus === 'pending' ? '同期待ち' : 'ローカル保存'}
+              </Text>
             </View>
           </View>
         </View>
-        <Pressable style={styles.aiButton} onPress={handleOpenPrompts}>
-          <Feather name="zap" size={icons.size.sm} color={colors.primary} />
-          <Text variant="caption" color="brand">AI</Text>
-        </Pressable>
+        <View style={styles.headerButtons}>
+          <Pressable
+            style={[styles.syncButton, isSyncing && styles.syncButtonActive]}
+            onPress={() => handleSync()}
+            disabled={isSyncing}
+          >
+            {isSyncing ? (
+              <ActivityIndicator size="small" color={colors.primary} />
+            ) : (
+              <Feather
+                name={isGitHubConnected ? 'upload-cloud' : 'github'}
+                size={icons.size.sm}
+                color={isGitHubConnected ? colors.primary : colors.text.muted}
+              />
+            )}
+          </Pressable>
+          <Pressable style={styles.aiButton} onPress={handleOpenPrompts}>
+            <Feather name="zap" size={icons.size.sm} color={colors.primary} />
+            <Text variant="caption" color="brand">AI</Text>
+          </Pressable>
+        </View>
       </View>
 
       {/* Sync Status */}
@@ -354,6 +522,16 @@ export default function EditorScreen() {
           />
         </Pressable>
       </View>
+
+      {/* Repo Picker Modal */}
+      {isGitHubConnected && (
+        <RepoPicker
+          visible={showRepoPicker}
+          onClose={() => setShowRepoPicker(false)}
+          onSelect={handleRepoSelect}
+          accessToken={settings.github!.accessToken}
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -393,6 +571,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing[1],
     marginTop: spacing[0.5],
+  },
+  headerButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[2],
+  },
+  syncButton: {
+    width: 40,
+    height: 40,
+    borderRadius: borderRadius.lg,
+    backgroundColor: colors.gray[100],
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  syncButtonActive: {
+    backgroundColor: colors.primaryLight,
   },
   aiButton: {
     flexDirection: 'row',
@@ -557,5 +751,56 @@ const previewStyles = StyleSheet.create({
   },
   bottomPadding: {
     height: spacing[8],
+  },
+});
+
+const modalStyles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: colors.background.light,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing[4],
+    paddingVertical: spacing[3],
+    backgroundColor: colors.surface.light,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border.light,
+  },
+  content: {
+    flex: 1,
+    padding: spacing[4],
+  },
+  loading: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingTop: spacing[12],
+  },
+  empty: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingTop: spacing[12],
+  },
+  repoCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[3],
+    marginBottom: spacing[2],
+  },
+  repoIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: borderRadius.lg,
+    backgroundColor: colors.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  repoInfo: {
+    flex: 1,
+    gap: spacing[0.5],
   },
 });

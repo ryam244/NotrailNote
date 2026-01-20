@@ -3,11 +3,12 @@
 ## 1. Project Concept
 
 **NotrailNote** は、AI生成コンテンツやアイデアを管理するためのiOSアプリです。
-GitHubをバージョン管理バックエンドとして活用し、Markdownベースの編集体験を提供します。
+**ローカルSQLiteでのバージョン履歴管理**を基本とし、オプションでGitHub連携も可能です。
 
 ### Core Value Propositions
-- **Gitネイティブなバージョン管理**: 専門知識不要で差分履歴を追跡
-- **ローカルファースト**: オフラインでも編集可能、オンライン時にGitHub同期
+- **ローカルファースト**: オフラインでも編集・履歴確認が可能
+- **バージョン履歴**: GitHub不要でも差分履歴を追跡（ローカルSQLite）
+- **オプショナルGitHub連携**: 上級者向けにGitHubバックアップ・同期も対応
 - **AI活用促進**: 音声テキスト化、プロンプト管理機能
 
 ---
@@ -162,24 +163,33 @@ interface Document {
   content: string;
   createdAt: Date;
   updatedAt: Date;
-  syncStatus: 'synced' | 'pending' | 'local' | 'error';
-  repoPath?: string;        // GitHub上のパス
-  branch?: string;
-  lastCommitSha?: string;
+  // GitHub連携はオプション
+  githubSync?: {
+    enabled: boolean;
+    repoPath: string;
+    branch: string;
+    lastCommitSha?: string;
+    syncStatus: 'synced' | 'pending' | 'error';
+  };
 }
 
-// バージョン履歴
+// バージョン履歴（ローカルSQLite + オプションGitHub）
 interface Version {
   id: string;
   documentId: string;
-  content: string;
+  content: string;              // 全文スナップショット
+  createdAt: Date;
+  source: 'local' | 'github';   // 履歴のソース
+  // ローカル保存用
+  label?: string;               // ユーザー定義のラベル（任意）
+  autoSaved: boolean;           // 自動保存 or 手動スナップショット
+  // GitHub連携時のみ
   commitSha?: string;
   commitMessage?: string;
-  createdAt: Date;
   author?: string;
 }
 
-// 差分情報
+// 差分情報（リアルタイム計算）
 interface Diff {
   type: 'added' | 'removed' | 'unchanged';
   content: string;
@@ -194,7 +204,7 @@ interface PromptTemplate {
   prompt: string;
   model: string;
   lastUsedAt?: Date;
-  syncStatus: 'synced' | 'local';
+  createdAt: Date;
 }
 
 // ユーザー設定
@@ -202,23 +212,177 @@ interface UserSettings {
   theme: 'light' | 'dark' | 'system';
   fontSize: 'small' | 'medium' | 'large';
   focusMode: boolean;
-  defaultRepo?: string;
-  defaultBranch?: string;
+  // GitHub連携設定（オプション）
+  github?: {
+    enabled: boolean;
+    defaultRepo?: string;
+    defaultBranch?: string;
+  };
 }
 
-// GitHub認証情報
-interface GitHubAuth {
-  accessToken: string;
-  refreshToken?: string;
-  username: string;
-  avatarUrl?: string;
-  expiresAt?: Date;
+// ユーザープラン
+type UserPlan = 'free' | 'basic' | 'pro' | 'business';
+
+// ユーザー情報
+interface User {
+  id: string;
+  email?: string;
+  plan: UserPlan;
+  // GitHub連携時のみ
+  github?: {
+    accessToken: string;
+    refreshToken?: string;
+    username: string;
+    avatarUrl?: string;
+    expiresAt?: Date;
+  };
 }
+
+// プラン別の制限
+const PLAN_LIMITS = {
+  free: {
+    historyRetentionDays: 7,      // 7日間
+    maxDocuments: 10,
+    maxPromptsTemplates: 5,
+  },
+  basic: {
+    historyRetentionDays: 30,     // 30日間
+    maxDocuments: 100,
+    maxPromptsTemplates: 20,
+  },
+  pro: {
+    historyRetentionDays: 365,    // 1年間
+    maxDocuments: -1,             // 無制限
+    maxPromptsTemplates: -1,
+  },
+  business: {
+    historyRetentionDays: -1,     // 無制限
+    maxDocuments: -1,
+    maxPromptsTemplates: -1,
+  },
+} as const;
 ```
 
 ---
 
-## 6. Directory Structure
+## 6. Storage Strategy
+
+### 6.1. アーキテクチャ概要
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    NotrailNote App                      │
+├─────────────────────────────────────────────────────────┤
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐     │
+│  │   Zustand   │  │ React Query │  │   SQLite    │     │
+│  │   (State)   │  │  (Server)   │  │  (Local DB) │     │
+│  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘     │
+│         │                │                │             │
+│         └────────────────┼────────────────┘             │
+│                          │                              │
+│                   ┌──────▼──────┐                       │
+│                   │  Services   │                       │
+│                   └──────┬──────┘                       │
+│                          │                              │
+│         ┌────────────────┼────────────────┐             │
+│         │                │                │             │
+│    ┌────▼────┐     ┌─────▼─────┐   ┌──────▼──────┐     │
+│    │ SQLite  │     │  GitHub   │   │  Firebase   │     │
+│    │ (必須)  │     │ (オプション) │   │   Auth     │     │
+│    └─────────┘     └───────────┘   └─────────────┘     │
+└─────────────────────────────────────────────────────────┘
+```
+
+### 6.2. SQLite スキーマ
+
+```sql
+-- ドキュメントテーブル
+CREATE TABLE documents (
+  id TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  content TEXT NOT NULL,
+  created_at INTEGER NOT NULL,  -- Unix timestamp
+  updated_at INTEGER NOT NULL,
+  -- GitHub連携設定（JSON）
+  github_sync TEXT  -- { enabled, repoPath, branch, lastCommitSha, syncStatus }
+);
+
+-- バージョン履歴テーブル
+CREATE TABLE versions (
+  id TEXT PRIMARY KEY,
+  document_id TEXT NOT NULL,
+  content TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  source TEXT NOT NULL CHECK (source IN ('local', 'github')),
+  label TEXT,
+  auto_saved INTEGER NOT NULL DEFAULT 1,  -- boolean
+  commit_sha TEXT,
+  commit_message TEXT,
+  author TEXT,
+  FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE
+);
+
+-- インデックス
+CREATE INDEX idx_versions_document_id ON versions(document_id);
+CREATE INDEX idx_versions_created_at ON versions(created_at);
+
+-- プロンプトテンプレートテーブル
+CREATE TABLE prompt_templates (
+  id TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  description TEXT,
+  prompt TEXT NOT NULL,
+  model TEXT NOT NULL,
+  last_used_at INTEGER,
+  created_at INTEGER NOT NULL
+);
+
+-- ユーザー設定テーブル（1行のみ）
+CREATE TABLE user_settings (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  theme TEXT DEFAULT 'system',
+  font_size TEXT DEFAULT 'medium',
+  focus_mode INTEGER DEFAULT 0,
+  github_config TEXT  -- JSON
+);
+```
+
+### 6.3. 履歴保存ルール
+
+| トリガー | 保存タイミング | auto_saved |
+|---------|---------------|------------|
+| 自動保存 | 編集停止後3秒 | true |
+| 手動スナップショット | ユーザー操作 | false |
+| アプリ終了時 | バックグラウンド移行時 | true |
+
+### 6.4. 履歴クリーンアップ
+
+```typescript
+// 定期実行（アプリ起動時 or 1日1回）
+async function cleanupOldVersions(planRetentionDays: number) {
+  if (planRetentionDays === -1) return; // 無制限プラン
+
+  const cutoffDate = Date.now() - (planRetentionDays * 24 * 60 * 60 * 1000);
+
+  await db.run(`
+    DELETE FROM versions
+    WHERE created_at < ?
+    AND auto_saved = 1  -- 手動スナップショットは保持
+  `, cutoffDate);
+}
+```
+
+### 6.5. GitHub連携（オプション）
+
+GitHub連携を有効にした場合の追加フロー：
+
+1. **Push**: ローカル保存 → Versionレコード作成 → GitHubにコミット
+2. **Pull**: GitHub履歴取得 → Versionレコード追加（source: 'github'）
+3. **Conflict**: ローカル優先、GitHubは別Versionとして保存
+
+---
+
+## 7. Directory Structure
 
 ```
 notrailnote/
@@ -274,7 +438,7 @@ notrailnote/
 
 ---
 
-## 7. Implementation Roadmap (Checklist)
+## 8. Implementation Roadmap (Checklist)
 
 ### Phase 1: Project Setup & Foundation
 - [ ] Expoプロジェクト新規作成 (SDK 52)
@@ -321,7 +485,7 @@ notrailnote/
 
 ---
 
-## 8. Component Specifications
+## 9. Component Specifications
 
 ### 8.1. Dashboard Components
 
@@ -353,11 +517,12 @@ notrailnote/
 
 ---
 
-## 9. Update Log
+## 10. Update Log
 
 | Date | Status | Changes |
 |------|--------|---------|
 | 2026-01-20 | Created | 初版作成。Tech Spec, Screen Flow, Data Models, Roadmap定義 |
+| 2026-01-20 | Updated | ストレージ戦略追加。ローカルSQLiteでの履歴管理、プラン別期間制限を定義 |
 
 ---
 

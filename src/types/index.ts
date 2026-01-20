@@ -5,6 +5,7 @@ export interface Document {
   content: string;
   createdAt: number; // Unix timestamp
   updatedAt: number;
+  tags?: string[];
   githubSync?: {
     enabled: boolean;
     repoPath: string;

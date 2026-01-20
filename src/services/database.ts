@@ -19,6 +19,7 @@ export async function initDatabase(): Promise<void> {
       content TEXT NOT NULL,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL,
+      tags TEXT,
       github_sync TEXT
     );
 
@@ -89,6 +90,7 @@ export async function getAllDocuments(): Promise<Document[]> {
     content: string;
     created_at: number;
     updated_at: number;
+    tags: string | null;
     github_sync: string | null;
   }>('SELECT * FROM documents ORDER BY updated_at DESC');
 
@@ -98,6 +100,7 @@ export async function getAllDocuments(): Promise<Document[]> {
     content: row.content,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    tags: row.tags ? JSON.parse(row.tags) : undefined,
     githubSync: row.github_sync ? JSON.parse(row.github_sync) : undefined,
   }));
 }
@@ -109,6 +112,7 @@ export async function getDocumentById(id: string): Promise<Document | null> {
     content: string;
     created_at: number;
     updated_at: number;
+    tags: string | null;
     github_sync: string | null;
   }>('SELECT * FROM documents WHERE id = ?', id);
 
@@ -120,19 +124,21 @@ export async function getDocumentById(id: string): Promise<Document | null> {
     content: result.content,
     createdAt: result.created_at,
     updatedAt: result.updated_at,
+    tags: result.tags ? JSON.parse(result.tags) : undefined,
     githubSync: result.github_sync ? JSON.parse(result.github_sync) : undefined,
   };
 }
 
 export async function createDocument(document: Document): Promise<void> {
   await getDb().runAsync(
-    `INSERT INTO documents (id, title, content, created_at, updated_at, github_sync)
-     VALUES (?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO documents (id, title, content, created_at, updated_at, tags, github_sync)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
     document.id,
     document.title,
     document.content,
     document.createdAt,
     document.updatedAt,
+    document.tags ? JSON.stringify(document.tags) : null,
     document.githubSync ? JSON.stringify(document.githubSync) : null
   );
 }
@@ -151,6 +157,10 @@ export async function updateDocument(
   if (updates.content !== undefined) {
     setClauses.push('content = ?');
     values.push(updates.content);
+  }
+  if (updates.tags !== undefined) {
+    setClauses.push('tags = ?');
+    values.push(updates.tags ? JSON.stringify(updates.tags) : null);
   }
   if (updates.githubSync !== undefined) {
     setClauses.push('github_sync = ?');
@@ -445,12 +455,14 @@ export async function searchDocuments(query: string): Promise<Document[]> {
     content: string;
     created_at: number;
     updated_at: number;
+    tags: string | null;
     github_sync: string | null;
   }>(
     `SELECT * FROM documents
-     WHERE title LIKE ? OR content LIKE ?
+     WHERE title LIKE ? OR content LIKE ? OR tags LIKE ?
      ORDER BY updated_at DESC
      LIMIT 50`,
+    searchTerm,
     searchTerm,
     searchTerm
   );
@@ -461,6 +473,24 @@ export async function searchDocuments(query: string): Promise<Document[]> {
     content: row.content,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    tags: row.tags ? JSON.parse(row.tags) : undefined,
     githubSync: row.github_sync ? JSON.parse(row.github_sync) : undefined,
   }));
+}
+
+// Get all unique tags
+export async function getAllTags(): Promise<string[]> {
+  const result = await getDb().getAllAsync<{ tags: string | null }>(
+    'SELECT DISTINCT tags FROM documents WHERE tags IS NOT NULL'
+  );
+
+  const tagSet = new Set<string>();
+  for (const row of result) {
+    if (row.tags) {
+      const tags: string[] = JSON.parse(row.tags);
+      tags.forEach((tag) => tagSet.add(tag));
+    }
+  }
+
+  return Array.from(tagSet).sort();
 }

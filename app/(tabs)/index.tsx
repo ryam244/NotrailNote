@@ -1,11 +1,12 @@
 import { useEffect, useCallback, useState } from 'react';
-import { View, StyleSheet, ScrollView, Pressable, RefreshControl, Alert } from 'react-native';
+import { View, StyleSheet, ScrollView, Pressable, RefreshControl, Alert, TextInput, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { Text, Card } from '@/components/common';
 import { colors, spacing, borderRadius, shadows, icons } from '@/theme';
 import { useDocuments } from '@/hooks';
+import { searchDocuments } from '@/services/database';
 import type { Document } from '@/types';
 
 type FilterTab = 'all' | 'synced' | 'local';
@@ -46,10 +47,38 @@ export default function DashboardScreen() {
   const { documents, isLoading, error, loadDocuments, createDocument, deleteDocument, limits } = useDocuments();
   const [activeTab, setActiveTab] = useState<FilterTab>('all');
   const [refreshing, setRefreshing] = useState(false);
+  const [showSearch, setShowSearch] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<Document[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
 
   useEffect(() => {
     loadDocuments();
   }, [loadDocuments]);
+
+  // Search handler
+  const handleSearch = useCallback(async (query: string) => {
+    setSearchQuery(query);
+    if (!query.trim()) {
+      setSearchResults([]);
+      return;
+    }
+    setIsSearching(true);
+    try {
+      const results = await searchDocuments(query);
+      setSearchResults(results);
+    } catch (err) {
+      console.error('Search error:', err);
+    } finally {
+      setIsSearching(false);
+    }
+  }, []);
+
+  const closeSearch = useCallback(() => {
+    setShowSearch(false);
+    setSearchQuery('');
+    setSearchResults([]);
+  }, []);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -98,7 +127,7 @@ export default function DashboardScreen() {
         </View>
         <Text variant="h3">ファイル一覧</Text>
         <View style={styles.headerRight}>
-          <Pressable style={styles.headerButton}>
+          <Pressable style={styles.headerButton} onPress={() => setShowSearch(true)}>
             <Feather name="search" size={icons.size.md} color={colors.text.secondary} />
           </Pressable>
           <Pressable style={styles.headerButton}>
@@ -106,6 +135,76 @@ export default function DashboardScreen() {
           </Pressable>
         </View>
       </View>
+
+      {/* Search Modal */}
+      <Modal visible={showSearch} animationType="slide" presentationStyle="pageSheet">
+        <SafeAreaView style={styles.searchContainer}>
+          <View style={styles.searchHeader}>
+            <View style={styles.searchInputContainer}>
+              <Feather name="search" size={20} color={colors.text.muted} />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="ドキュメントを検索..."
+                placeholderTextColor={colors.text.muted}
+                value={searchQuery}
+                onChangeText={handleSearch}
+                autoFocus
+              />
+              {searchQuery.length > 0 && (
+                <Pressable onPress={() => handleSearch('')}>
+                  <Feather name="x" size={20} color={colors.text.muted} />
+                </Pressable>
+              )}
+            </View>
+            <Pressable onPress={closeSearch} style={styles.searchCancel}>
+              <Text variant="body" color="brand">キャンセル</Text>
+            </Pressable>
+          </View>
+          <ScrollView style={styles.searchResults}>
+            {searchQuery.length === 0 ? (
+              <View style={styles.searchHint}>
+                <Feather name="search" size={48} color={colors.gray[300]} />
+                <Text variant="body" color="secondary" style={{ marginTop: spacing[3] }}>
+                  タイトルや内容で検索
+                </Text>
+              </View>
+            ) : searchResults.length === 0 ? (
+              <View style={styles.searchHint}>
+                <Feather name="file-minus" size={48} color={colors.gray[300]} />
+                <Text variant="body" color="secondary" style={{ marginTop: spacing[3] }}>
+                  「{searchQuery}」に一致するドキュメントがありません
+                </Text>
+              </View>
+            ) : (
+              searchResults.map((doc) => {
+                const syncStatus = getSyncStatus(doc);
+                return (
+                  <Pressable
+                    key={doc.id}
+                    onPress={() => {
+                      closeSearch();
+                      router.push(`/editor/${doc.id}`);
+                    }}
+                  >
+                    <Card style={styles.fileCard}>
+                      <View style={[styles.fileIcon, { backgroundColor: colors.gray[100] }]}>
+                        <Feather name="file-text" size={20} color={colors.text.muted} />
+                      </View>
+                      <View style={styles.fileInfo}>
+                        <Text variant="bodyBold" numberOfLines={1}>{doc.title}</Text>
+                        <Text variant="caption" color="secondary" numberOfLines={1}>
+                          {doc.content.slice(0, 50) || '(空のドキュメント)'}
+                        </Text>
+                      </View>
+                      <SyncIcon status={syncStatus} />
+                    </Card>
+                  </Pressable>
+                );
+              })
+            )}
+          </ScrollView>
+        </SafeAreaView>
+      </Modal>
 
       {/* Filter Tabs */}
       <View style={styles.filterTabs}>
@@ -345,5 +444,46 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     ...shadows.primary,
+  },
+  searchContainer: {
+    flex: 1,
+    backgroundColor: colors.background.light,
+  },
+  searchHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing[4],
+    paddingVertical: spacing[3],
+    backgroundColor: colors.surface.light,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border.light,
+    gap: spacing[3],
+  },
+  searchInputContainer: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.gray[100],
+    borderRadius: borderRadius.lg,
+    paddingHorizontal: spacing[3],
+    gap: spacing[2],
+  },
+  searchInput: {
+    flex: 1,
+    height: 44,
+    fontSize: 16,
+    color: colors.text.primary,
+  },
+  searchCancel: {
+    paddingVertical: spacing[2],
+  },
+  searchResults: {
+    flex: 1,
+    padding: spacing[4],
+  },
+  searchHint: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing[12],
   },
 });

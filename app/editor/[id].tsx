@@ -295,16 +295,29 @@ export default function EditorScreen() {
   const handleExport = useCallback(async (format: 'markdown' | 'html' | 'text') => {
     if (!id) return;
     const doc = await getDocument(id);
-    if (!doc) return;
+    if (!doc) {
+      Alert.alert('エラー', 'ドキュメントが見つかりません');
+      return;
+    }
 
     setShowMoreMenu(false);
-    const result = await exportDocument(
-      { ...doc, title, content, tags },
-      { format, includeTitle: true, includeMetadata: true }
-    );
 
-    if (!result.success && result.error) {
-      Alert.alert('エクスポートエラー', result.error);
+    // Show loading indicator briefly
+    const formatLabels = { markdown: 'Markdown', html: 'HTML', text: 'テキスト' };
+
+    try {
+      const result = await exportDocument(
+        { ...doc, title, content, tags },
+        { format, includeTitle: true, includeMetadata: true }
+      );
+
+      if (!result.success) {
+        Alert.alert('エクスポートエラー', result.error || 'エクスポートに失敗しました');
+      }
+      // 成功時は共有シートが表示されるのでアラートは不要
+    } catch (error) {
+      console.error('Export error:', error);
+      Alert.alert('エクスポートエラー', 'ファイルの作成に失敗しました。もう一度お試しください。');
     }
   }, [id, title, content, tags, getDocument]);
 

@@ -174,6 +174,12 @@ export const typography = {
       lineHeight: 1.4,
       letterSpacing: -0.01,
     },
+    h4: {
+      fontSize: 16,
+      fontWeight: '600' as const,
+      lineHeight: 1.4,
+      letterSpacing: -0.01,
+    },
     body: {
       fontSize: 16,
       fontWeight: '400' as const,

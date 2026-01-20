@@ -1,7 +1,7 @@
 import { Text as RNText, TextProps as RNTextProps, StyleSheet } from 'react-native';
 import { colors, typography } from '@/theme';
 
-type TextVariant = 'h1' | 'h2' | 'h3' | 'body' | 'bodyBold' | 'caption' | 'small' | 'micro';
+type TextVariant = 'h1' | 'h2' | 'h3' | 'h4' | 'body' | 'bodyBold' | 'caption' | 'small' | 'micro';
 type TextColor = 'primary' | 'secondary' | 'muted' | 'inverse' | 'brand' | 'error' | 'success';
 
 interface TextProps extends RNTextProps {

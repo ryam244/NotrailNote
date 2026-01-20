@@ -221,7 +221,7 @@ interface UserSettings {
 }
 
 // ユーザープラン
-type UserPlan = 'free' | 'basic' | 'pro' | 'business';
+type UserPlan = 'free' | 'basic' | 'pro';
 
 // ユーザー情報
 interface User {
@@ -241,24 +241,28 @@ interface User {
 // プラン別の制限
 const PLAN_LIMITS = {
   free: {
-    historyRetentionDays: 7,      // 7日間
+    price: 0,
+    historyRetentionDays: 30,       // 30日間
     maxDocuments: 10,
     maxPromptsTemplates: 5,
+    manualSnapshot: false,          // 手動スナップショット不可
+    autoSaveIntervalSec: 30,        // 自動保存間隔: 30秒
   },
   basic: {
-    historyRetentionDays: 30,     // 30日間
-    maxDocuments: 100,
-    maxPromptsTemplates: 20,
+    price: 500,                     // 500円/月
+    historyRetentionDays: 365,      // 1年間
+    maxDocuments: -1,               // 無制限
+    maxPromptsTemplates: -1,        // 無制限
+    manualSnapshot: true,           // 手動スナップショット可能
+    autoSaveIntervalSec: 10,        // 自動保存間隔: 10秒
   },
   pro: {
-    historyRetentionDays: 365,    // 1年間
-    maxDocuments: -1,             // 無制限
-    maxPromptsTemplates: -1,
-  },
-  business: {
-    historyRetentionDays: -1,     // 無制限
+    price: -1,                      // 要相談
+    historyRetentionDays: -1,       // 無制限
     maxDocuments: -1,
     maxPromptsTemplates: -1,
+    manualSnapshot: true,
+    autoSaveIntervalSec: 3,         // 自動保存間隔: 3秒
   },
 } as const;
 ```
@@ -349,11 +353,11 @@ CREATE TABLE user_settings (
 
 ### 6.3. 履歴保存ルール
 
-| トリガー | 保存タイミング | auto_saved |
-|---------|---------------|------------|
-| 自動保存 | 編集停止後3秒 | true |
-| 手動スナップショット | ユーザー操作 | false |
-| アプリ終了時 | バックグラウンド移行時 | true |
+| トリガー | 保存タイミング | auto_saved | プラン制限 |
+|---------|---------------|------------|-----------|
+| 自動保存 | 編集停止後 N秒 | true | Free: 30秒, Basic: 10秒, Pro: 3秒 |
+| 手動スナップショット | ユーザー操作 | false | Basic以上のみ |
+| アプリ終了時 | バックグラウンド移行時 | true | 全プラン |
 
 ### 6.4. 履歴クリーンアップ
 
@@ -523,6 +527,7 @@ notrailnote/
 |------|--------|---------|
 | 2026-01-20 | Created | 初版作成。Tech Spec, Screen Flow, Data Models, Roadmap定義 |
 | 2026-01-20 | Updated | ストレージ戦略追加。ローカルSQLiteでの履歴管理、プラン別期間制限を定義 |
+| 2026-01-20 | Updated | プラン体系変更: Free/Basic(500円)/Pro(要相談)の3プラン。手動スナップショットはBasic以上、自動保存間隔をプラン別に設定 |
 
 ---
 

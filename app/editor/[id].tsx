@@ -9,6 +9,7 @@ import { useDocuments, useVersions } from '@/hooks';
 import { useSettingsStore } from '@/stores';
 import { syncDocument } from '@/services/githubSync';
 import { listRepositories, type GitHubRepo } from '@/services/github';
+import { exportDocument, type ExportOptions } from '@/services/export';
 
 // Simple Markdown renderer
 function MarkdownPreview({ content }: { content: string }) {
@@ -239,6 +240,10 @@ export default function EditorScreen() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [showRepoPicker, setShowRepoPicker] = useState(false);
   const [syncStatus, setSyncStatus] = useState<'synced' | 'pending' | 'local'>('local');
+  const [tags, setTags] = useState<string[]>([]);
+  const [showTagInput, setShowTagInput] = useState(false);
+  const [newTag, setNewTag] = useState('');
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
 
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSavedContentRef = useRef<string>('');
@@ -255,10 +260,53 @@ export default function EditorScreen() {
           setCharCount(doc.content.length);
           lastSavedContentRef.current = doc.content;
           setSyncStatus(doc.githubSync?.syncStatus ?? 'local');
+          setTags(doc.tags ?? []);
         }
       });
     }
   }, [id, getDocument]);
+
+  // タグ追加
+  const handleAddTag = useCallback(() => {
+    if (!newTag.trim() || tags.includes(newTag.trim())) {
+      setNewTag('');
+      setShowTagInput(false);
+      return;
+    }
+    const updatedTags = [...tags, newTag.trim()];
+    setTags(updatedTags);
+    setNewTag('');
+    setShowTagInput(false);
+    if (id) {
+      updateDocument(id, { tags: updatedTags });
+    }
+  }, [newTag, tags, id, updateDocument]);
+
+  // タグ削除
+  const handleRemoveTag = useCallback((tagToRemove: string) => {
+    const updatedTags = tags.filter((t) => t !== tagToRemove);
+    setTags(updatedTags);
+    if (id) {
+      updateDocument(id, { tags: updatedTags });
+    }
+  }, [tags, id, updateDocument]);
+
+  // エクスポート
+  const handleExport = useCallback(async (format: 'markdown' | 'html' | 'text') => {
+    if (!id) return;
+    const doc = await getDocument(id);
+    if (!doc) return;
+
+    setShowMoreMenu(false);
+    const result = await exportDocument(
+      { ...doc, title, content, tags },
+      { format, includeTitle: true, includeMetadata: true }
+    );
+
+    if (!result.success && result.error) {
+      Alert.alert('エクスポートエラー', result.error);
+    }
+  }, [id, title, content, tags, getDocument]);
 
   // GitHub同期ハンドラー
   const handleSync = useCallback(async (selectedRepo?: GitHubRepo) => {
@@ -444,6 +492,9 @@ export default function EditorScreen() {
             <Feather name="zap" size={icons.size.sm} color={colors.primary} />
             <Text variant="caption" color="brand">AI</Text>
           </Pressable>
+          <Pressable style={styles.moreButton} onPress={() => setShowMoreMenu(true)}>
+            <Feather name="more-vertical" size={icons.size.sm} color={colors.text.secondary} />
+          </Pressable>
         </View>
       </View>
 
@@ -470,6 +521,41 @@ export default function EditorScreen() {
           )}
           <Text variant="micro" color="muted">{charCount.toLocaleString()} 文字</Text>
         </View>
+      </View>
+
+      {/* Tags */}
+      <View style={styles.tagsContainer}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tagsScroll}>
+          {tags.map((tag) => (
+            <Pressable
+              key={tag}
+              style={styles.tag}
+              onPress={() => handleRemoveTag(tag)}
+            >
+              <Text variant="micro" color="brand">{tag}</Text>
+              <Feather name="x" size={12} color={colors.primary} />
+            </Pressable>
+          ))}
+          {showTagInput ? (
+            <View style={styles.tagInputContainer}>
+              <TextInput
+                style={styles.tagInput}
+                value={newTag}
+                onChangeText={setNewTag}
+                placeholder="タグ名"
+                placeholderTextColor={colors.text.muted}
+                autoFocus
+                onSubmitEditing={handleAddTag}
+                onBlur={handleAddTag}
+              />
+            </View>
+          ) : (
+            <Pressable style={styles.addTagButton} onPress={() => setShowTagInput(true)}>
+              <Feather name="plus" size={14} color={colors.text.muted} />
+              <Text variant="micro" color="muted">タグ追加</Text>
+            </Pressable>
+          )}
+        </ScrollView>
       </View>
 
       {/* Editor or Preview */}
@@ -532,6 +618,32 @@ export default function EditorScreen() {
           accessToken={settings.github!.accessToken}
         />
       )}
+
+      {/* More Menu Modal */}
+      <Modal visible={showMoreMenu} animationType="fade" transparent>
+        <Pressable style={styles.menuOverlay} onPress={() => setShowMoreMenu(false)}>
+          <View style={styles.menuContainer}>
+            <Text variant="caption" color="muted" style={styles.menuTitle}>エクスポート</Text>
+            <Pressable style={styles.menuItem} onPress={() => handleExport('markdown')}>
+              <Feather name="file-text" size={20} color={colors.text.primary} />
+              <Text variant="body">Markdownファイル (.md)</Text>
+            </Pressable>
+            <Pressable style={styles.menuItem} onPress={() => handleExport('html')}>
+              <Feather name="code" size={20} color={colors.text.primary} />
+              <Text variant="body">HTMLファイル (.html)</Text>
+            </Pressable>
+            <Pressable style={styles.menuItem} onPress={() => handleExport('text')}>
+              <Feather name="align-left" size={20} color={colors.text.primary} />
+              <Text variant="body">テキストファイル (.txt)</Text>
+            </Pressable>
+            <View style={styles.menuDivider} />
+            <Pressable style={styles.menuItem} onPress={() => setShowMoreMenu(false)}>
+              <Feather name="x" size={20} color={colors.text.muted} />
+              <Text variant="body" color="secondary">キャンセル</Text>
+            </Pressable>
+          </View>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -599,6 +711,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.primary + '30',
   },
+  moreButton: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   syncBar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -624,6 +742,77 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing[2],
     paddingVertical: spacing[0.5],
     borderRadius: borderRadius.sm,
+  },
+  tagsContainer: {
+    backgroundColor: colors.surface.light,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border.light,
+    paddingVertical: spacing[2],
+  },
+  tagsScroll: {
+    paddingHorizontal: spacing[4],
+    gap: spacing[2],
+  },
+  tag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[1],
+    backgroundColor: colors.primaryLight,
+    paddingHorizontal: spacing[2],
+    paddingVertical: spacing[1],
+    borderRadius: borderRadius.full,
+  },
+  tagInputContainer: {
+    backgroundColor: colors.gray[100],
+    borderRadius: borderRadius.full,
+    paddingHorizontal: spacing[2],
+  },
+  tagInput: {
+    height: 28,
+    fontSize: 12,
+    color: colors.text.primary,
+    minWidth: 60,
+  },
+  addTagButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[1],
+    paddingHorizontal: spacing[2],
+    paddingVertical: spacing[1],
+    borderRadius: borderRadius.full,
+    borderWidth: 1,
+    borderColor: colors.border.light,
+    borderStyle: 'dashed',
+  },
+  menuOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: spacing[6],
+  },
+  menuContainer: {
+    backgroundColor: colors.surface.light,
+    borderRadius: borderRadius.xl,
+    padding: spacing[4],
+    width: '100%',
+    maxWidth: 320,
+  },
+  menuTitle: {
+    marginBottom: spacing[2],
+    paddingHorizontal: spacing[2],
+  },
+  menuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[3],
+    paddingVertical: spacing[3],
+    paddingHorizontal: spacing[2],
+  },
+  menuDivider: {
+    height: 1,
+    backgroundColor: colors.border.light,
+    marginVertical: spacing[2],
   },
   editorContainer: {
     flex: 1,

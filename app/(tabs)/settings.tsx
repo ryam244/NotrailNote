@@ -1,8 +1,14 @@
-import { View, StyleSheet, ScrollView, Pressable, Switch } from 'react-native';
+import { useCallback, useState } from 'react';
+import { View, StyleSheet, ScrollView, Pressable, Switch, Alert, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
-import { Text } from '@/components/common';
+import { router } from 'expo-router';
+import { Text, Card } from '@/components/common';
 import { colors, spacing, borderRadius, icons } from '@/theme';
+import { useSettingsStore, useAuthStore } from '@/stores';
+import { saveSettings } from '@/services/database';
+import type { UserSettings } from '@/types';
+import { PLAN_LIMITS } from '@/types';
 
 interface SettingsItemProps {
   icon: keyof typeof Feather.glyphMap;
@@ -11,7 +17,9 @@ interface SettingsItemProps {
   value?: string;
   showChevron?: boolean;
   toggle?: boolean;
+  onToggle?: (value: boolean) => void;
   onPress?: () => void;
+  disabled?: boolean;
 }
 
 function SettingsItem({
@@ -21,24 +29,34 @@ function SettingsItem({
   value,
   showChevron = true,
   toggle,
+  onToggle,
   onPress,
+  disabled = false,
 }: SettingsItemProps) {
   return (
-    <Pressable style={styles.settingsItem} onPress={onPress}>
+    <Pressable
+      style={[styles.settingsItem, disabled && styles.settingsItemDisabled]}
+      onPress={onPress}
+      disabled={disabled || toggle !== undefined}
+    >
       <View style={[styles.settingsIcon, { backgroundColor: iconBg }]}>
         <Feather name={icon} size={icons.size.sm} color={colors.text.inverse} />
       </View>
-      <Text variant="body" style={styles.settingsTitle}>{title}</Text>
+      <Text variant="body" style={styles.settingsTitle} color={disabled ? 'muted' : 'primary'}>
+        {title}
+      </Text>
       <View style={styles.settingsValue}>
         {value && <Text variant="caption" color="secondary">{value}</Text>}
         {toggle !== undefined && (
           <Switch
             value={toggle}
+            onValueChange={onToggle}
             trackColor={{ false: colors.gray[200], true: colors.primary }}
             thumbColor={colors.surface.light}
+            disabled={disabled}
           />
         )}
-        {showChevron && !toggle && (
+        {showChevron && toggle === undefined && (
           <Feather name="chevron-right" size={icons.size.sm} color={colors.gray[300]} />
         )}
       </View>
@@ -46,7 +64,159 @@ function SettingsItem({
   );
 }
 
+const FONT_SIZE_LABELS: Record<UserSettings['fontSize'], string> = {
+  small: '小',
+  medium: '中',
+  large: '大',
+};
+
+const THEME_LABELS: Record<UserSettings['theme'], string> = {
+  light: 'ライト',
+  dark: 'ダーク',
+  system: 'システム設定',
+};
+
+const PLAN_LABELS: Record<string, string> = {
+  free: 'Free',
+  basic: 'Basic',
+  pro: 'Pro',
+};
+
+type PickerOption<T> = { label: string; value: T };
+
+function OptionPicker<T extends string>({
+  visible,
+  title,
+  options,
+  selectedValue,
+  onSelect,
+  onClose,
+}: {
+  visible: boolean;
+  title: string;
+  options: PickerOption<T>[];
+  selectedValue: T;
+  onSelect: (value: T) => void;
+  onClose: () => void;
+}) {
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <Pressable style={styles.modalOverlay} onPress={onClose}>
+        <View style={styles.modalContent}>
+          <Text variant="h4" style={styles.modalTitle}>{title}</Text>
+          {options.map((option) => (
+            <Pressable
+              key={option.value}
+              style={[
+                styles.modalOption,
+                selectedValue === option.value && styles.modalOptionSelected,
+              ]}
+              onPress={() => {
+                onSelect(option.value);
+                onClose();
+              }}
+            >
+              <Text
+                variant="body"
+                color={selectedValue === option.value ? 'brand' : 'primary'}
+              >
+                {option.label}
+              </Text>
+              {selectedValue === option.value && (
+                <Feather name="check" size={icons.size.sm} color={colors.primary} />
+              )}
+            </Pressable>
+          ))}
+        </View>
+      </Pressable>
+    </Modal>
+  );
+}
+
 export default function SettingsScreen() {
+  const { settings, setFontSize, setTheme, toggleFocusMode } = useSettingsStore();
+  const { user } = useAuthStore();
+  const [showFontSizePicker, setShowFontSizePicker] = useState(false);
+  const [showThemePicker, setShowThemePicker] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+
+  const plan = user?.plan ?? 'free';
+  const limits = PLAN_LIMITS[plan];
+
+  const handleFontSizeChange = useCallback(async (fontSize: UserSettings['fontSize']) => {
+    setIsSaving(true);
+    setFontSize(fontSize);
+    try {
+      await saveSettings({ ...settings, fontSize });
+    } catch (err) {
+      console.error('Failed to save settings:', err);
+    } finally {
+      setIsSaving(false);
+    }
+  }, [settings, setFontSize]);
+
+  const handleThemeChange = useCallback(async (theme: UserSettings['theme']) => {
+    setIsSaving(true);
+    setTheme(theme);
+    try {
+      await saveSettings({ ...settings, theme });
+    } catch (err) {
+      console.error('Failed to save settings:', err);
+    } finally {
+      setIsSaving(false);
+    }
+  }, [settings, setTheme]);
+
+  const handleFocusModeToggle = useCallback(async () => {
+    setIsSaving(true);
+    const newFocusMode = !settings.focusMode;
+    toggleFocusMode();
+    try {
+      await saveSettings({ ...settings, focusMode: newFocusMode });
+    } catch (err) {
+      console.error('Failed to save settings:', err);
+    } finally {
+      setIsSaving(false);
+    }
+  }, [settings, toggleFocusMode]);
+
+  const handleGitHubConnect = useCallback(() => {
+    router.push('/auth/github');
+  }, []);
+
+  const handleUpgrade = useCallback(() => {
+    Alert.alert(
+      'プランアップグレード',
+      'アップグレード機能は準備中です。',
+      [{ text: 'OK' }]
+    );
+  }, []);
+
+  const handleLogout = useCallback(() => {
+    Alert.alert(
+      'ログアウト',
+      'ログアウトしますか？',
+      [
+        { text: 'キャンセル', style: 'cancel' },
+        { text: 'ログアウト', style: 'destructive', onPress: () => {} },
+      ]
+    );
+  }, []);
+
+  const fontSizeOptions: PickerOption<UserSettings['fontSize']>[] = [
+    { label: '小', value: 'small' },
+    { label: '中', value: 'medium' },
+    { label: '大', value: 'large' },
+  ];
+
+  const themeOptions: PickerOption<UserSettings['theme']>[] = [
+    { label: 'ライト', value: 'light' },
+    { label: 'ダーク', value: 'dark' },
+    { label: 'システム設定', value: 'system' },
+  ];
+
+  const isGitHubConnected = !!settings.github?.accessToken;
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
@@ -61,13 +231,8 @@ export default function SettingsScreen() {
             icon="github"
             iconBg="#24292e"
             title="GitHub連携"
-            value="連携済み"
-          />
-          <SettingsItem
-            icon="mail"
-            iconBg={colors.primary}
-            title="メールアドレス"
-            value="user@example.com"
+            value={isGitHubConnected ? '連携済み' : '未連携'}
+            onPress={handleGitHubConnect}
           />
         </View>
 
@@ -78,24 +243,61 @@ export default function SettingsScreen() {
             icon="award"
             iconBg={colors.warning}
             title="現在のプラン"
-            value="Free"
+            value={PLAN_LABELS[plan]}
+            onPress={plan === 'free' ? handleUpgrade : undefined}
+            showChevron={plan === 'free'}
           />
+          <View style={styles.planInfo}>
+            <View style={styles.planInfoRow}>
+              <Text variant="caption" color="muted">ドキュメント上限</Text>
+              <Text variant="caption" color="secondary">
+                {limits.maxDocuments === -1 ? '無制限' : `${limits.maxDocuments}件`}
+              </Text>
+            </View>
+            <View style={styles.planInfoRow}>
+              <Text variant="caption" color="muted">履歴保存期間</Text>
+              <Text variant="caption" color="secondary">
+                {limits.historyRetentionDays === -1 ? '無制限' : `${limits.historyRetentionDays}日間`}
+              </Text>
+            </View>
+            <View style={styles.planInfoRow}>
+              <Text variant="caption" color="muted">自動保存間隔</Text>
+              <Text variant="caption" color="secondary">
+                {limits.autoSaveIntervalSec}秒
+              </Text>
+            </View>
+            <View style={styles.planInfoRow}>
+              <Text variant="caption" color="muted">手動スナップショット</Text>
+              <Text variant="caption" color="secondary">
+                {limits.manualSnapshot ? '利用可能' : '利用不可'}
+              </Text>
+            </View>
+          </View>
         </View>
 
         {/* Editor Section */}
         <Text variant="micro" color="muted" style={styles.sectionLabel}>エディタ設定</Text>
         <View style={styles.section}>
           <SettingsItem
+            icon="sun"
+            iconBg="#f59e0b"
+            title="テーマ"
+            value={THEME_LABELS[settings.theme]}
+            onPress={() => setShowThemePicker(true)}
+          />
+          <SettingsItem
             icon="type"
             iconBg={colors.success}
             title="フォントサイズ"
-            value="中"
+            value={FONT_SIZE_LABELS[settings.fontSize]}
+            onPress={() => setShowFontSizePicker(true)}
           />
           <SettingsItem
             icon="eye"
             iconBg="#8b5cf6"
             title="フォーカスモード"
-            toggle={true}
+            toggle={settings.focusMode}
+            onToggle={handleFocusModeToggle}
             showChevron={false}
           />
         </View>
@@ -123,7 +325,7 @@ export default function SettingsScreen() {
         </View>
 
         {/* Logout */}
-        <Pressable style={styles.logoutButton}>
+        <Pressable style={styles.logoutButton} onPress={handleLogout}>
           <Text variant="bodyBold" color="error">ログアウト</Text>
         </Pressable>
 
@@ -131,6 +333,24 @@ export default function SettingsScreen() {
           © 2024 NotrailNote Inc.
         </Text>
       </ScrollView>
+
+      <OptionPicker
+        visible={showFontSizePicker}
+        title="フォントサイズ"
+        options={fontSizeOptions}
+        selectedValue={settings.fontSize}
+        onSelect={handleFontSizeChange}
+        onClose={() => setShowFontSizePicker(false)}
+      />
+
+      <OptionPicker
+        visible={showThemePicker}
+        title="テーマ"
+        options={themeOptions}
+        selectedValue={settings.theme}
+        onSelect={handleThemeChange}
+        onClose={() => setShowThemePicker(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -171,6 +391,9 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.border.light,
   },
+  settingsItemDisabled: {
+    opacity: 0.5,
+  },
   settingsIcon: {
     width: 40,
     height: 40,
@@ -187,6 +410,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing[2],
   },
+  planInfo: {
+    paddingHorizontal: spacing[4],
+    paddingVertical: spacing[3],
+    gap: spacing[2],
+  },
+  planInfoRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
   logoutButton: {
     backgroundColor: colors.surface.light,
     borderRadius: borderRadius.xl,
@@ -198,5 +430,37 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: spacing[4],
     marginBottom: spacing[8],
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: spacing[6],
+  },
+  modalContent: {
+    backgroundColor: colors.surface.light,
+    borderRadius: borderRadius.xl,
+    width: '100%',
+    maxWidth: 320,
+    overflow: 'hidden',
+  },
+  modalTitle: {
+    paddingHorizontal: spacing[4],
+    paddingVertical: spacing[4],
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border.light,
+  },
+  modalOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing[4],
+    paddingVertical: spacing[4],
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border.light,
+  },
+  modalOptionSelected: {
+    backgroundColor: colors.primaryLight,
   },
 });

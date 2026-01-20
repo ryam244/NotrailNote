@@ -240,6 +240,113 @@ export async function deleteOldVersions(
   return result.changes;
 }
 
+export type VersionWithDocument = Version & {
+  documentTitle: string;
+};
+
+export async function getVersionById(id: string): Promise<Version | null> {
+  const result = await getDb().getFirstAsync<{
+    id: string;
+    document_id: string;
+    content: string;
+    created_at: number;
+    source: 'local' | 'github';
+    label: string | null;
+    auto_saved: number;
+    commit_sha: string | null;
+    commit_message: string | null;
+    author: string | null;
+  }>('SELECT * FROM versions WHERE id = ?', id);
+
+  if (!result) return null;
+
+  return {
+    id: result.id,
+    documentId: result.document_id,
+    content: result.content,
+    createdAt: result.created_at,
+    source: result.source,
+    label: result.label ?? undefined,
+    autoSaved: result.auto_saved === 1,
+    commitSha: result.commit_sha ?? undefined,
+    commitMessage: result.commit_message ?? undefined,
+    author: result.author ?? undefined,
+  };
+}
+
+export async function getPreviousVersion(documentId: string, createdAt: number): Promise<Version | null> {
+  const result = await getDb().getFirstAsync<{
+    id: string;
+    document_id: string;
+    content: string;
+    created_at: number;
+    source: 'local' | 'github';
+    label: string | null;
+    auto_saved: number;
+    commit_sha: string | null;
+    commit_message: string | null;
+    author: string | null;
+  }>(
+    `SELECT * FROM versions
+     WHERE document_id = ? AND created_at < ?
+     ORDER BY created_at DESC
+     LIMIT 1`,
+    documentId,
+    createdAt
+  );
+
+  if (!result) return null;
+
+  return {
+    id: result.id,
+    documentId: result.document_id,
+    content: result.content,
+    createdAt: result.created_at,
+    source: result.source,
+    label: result.label ?? undefined,
+    autoSaved: result.auto_saved === 1,
+    commitSha: result.commit_sha ?? undefined,
+    commitMessage: result.commit_message ?? undefined,
+    author: result.author ?? undefined,
+  };
+}
+
+export async function getAllVersionsWithDocuments(): Promise<VersionWithDocument[]> {
+  const result = await getDb().getAllAsync<{
+    id: string;
+    document_id: string;
+    content: string;
+    created_at: number;
+    source: 'local' | 'github';
+    label: string | null;
+    auto_saved: number;
+    commit_sha: string | null;
+    commit_message: string | null;
+    author: string | null;
+    document_title: string;
+  }>(
+    `SELECT v.*, d.title as document_title
+     FROM versions v
+     JOIN documents d ON v.document_id = d.id
+     ORDER BY v.created_at DESC
+     LIMIT 100`
+  );
+
+  return result.map((row) => ({
+    id: row.id,
+    documentId: row.document_id,
+    content: row.content,
+    createdAt: row.created_at,
+    source: row.source,
+    label: row.label ?? undefined,
+    autoSaved: row.auto_saved === 1,
+    commitSha: row.commit_sha ?? undefined,
+    commitMessage: row.commit_message ?? undefined,
+    author: row.author ?? undefined,
+    documentTitle: row.document_title,
+  }));
+}
+
 // =============================================================================
 // Settings
 // =============================================================================
@@ -322,4 +429,38 @@ export async function createPromptTemplate(
 
 export async function deletePromptTemplate(id: string): Promise<void> {
   await getDb().runAsync('DELETE FROM prompt_templates WHERE id = ?', id);
+}
+
+// =============================================================================
+// Search
+// =============================================================================
+
+export async function searchDocuments(query: string): Promise<Document[]> {
+  if (!query.trim()) return [];
+
+  const searchTerm = `%${query.trim()}%`;
+  const result = await getDb().getAllAsync<{
+    id: string;
+    title: string;
+    content: string;
+    created_at: number;
+    updated_at: number;
+    github_sync: string | null;
+  }>(
+    `SELECT * FROM documents
+     WHERE title LIKE ? OR content LIKE ?
+     ORDER BY updated_at DESC
+     LIMIT 50`,
+    searchTerm,
+    searchTerm
+  );
+
+  return result.map((row) => ({
+    id: row.id,
+    title: row.title,
+    content: row.content,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    githubSync: row.github_sync ? JSON.parse(row.github_sync) : undefined,
+  }));
 }

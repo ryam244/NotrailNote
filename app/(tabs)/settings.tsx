@@ -187,11 +187,7 @@ export default function SettingsScreen() {
   }, []);
 
   const handleUpgrade = useCallback(() => {
-    Alert.alert(
-      'プランアップグレード',
-      'アップグレード機能は準備中です。',
-      [{ text: 'OK' }]
-    );
+    router.push('/subscription');
   }, []);
 
   const handleGitHubDisconnect = useCallback(async () => {

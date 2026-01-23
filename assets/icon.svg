@@ -1,0 +1,22 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background with gradient -->
+  <defs>
+    <linearGradient id="bgGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#137fec;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#4facfe;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+
+  <!-- iOS App Icon Background (with rounded corners applied at export) -->
+  <rect width="1024" height="1024" fill="url(#bgGradient)"/>
+
+  <!-- N Logo - Flipped/Mirrored version -->
+  <!-- Scale: 100x100 viewport -> 1024x1024, so multiply by 10.24 -->
+  <!-- Centered: offset by ~262 on each side -->
+  <g transform="translate(262, 262) scale(5)">
+    <!-- Right vertical line: from (70, 25) to (70, 75) -->
+    <path d="M70 25V75" stroke="white" stroke-width="14" stroke-linecap="round"/>
+    <!-- Diagonal + left line: from (70, 25) to (30, 75) to (30, 25) -->
+    <path d="M70 25L30 75V25" stroke="white" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

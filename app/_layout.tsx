@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
-import { Stack } from 'expo-router';
+import { Stack, router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { colors } from '@/theme';
 import { initDatabase, getSettings } from '@/services/database';
 import { useSettingsStore, useAuthStore } from '@/stores';
@@ -11,6 +12,7 @@ const queryClient = new QueryClient();
 
 function AppInitializer({ children }: { children: React.ReactNode }) {
   const [isReady, setIsReady] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(false);
   const { setSettings, setLoading: setSettingsLoading } = useSettingsStore();
   const { setUser, setLoading: setAuthLoading } = useAuthStore();
 
@@ -32,6 +34,12 @@ function AppInitializer({ children }: { children: React.ReactNode }) {
         });
         setAuthLoading(false);
 
+        // オンボーディング確認
+        const hasSeenOnboarding = await AsyncStorage.getItem('hasSeenOnboarding');
+        if (!hasSeenOnboarding) {
+          setShowOnboarding(true);
+        }
+
         setIsReady(true);
       } catch (error) {
         console.error('Initialization error:', error);
@@ -41,6 +49,12 @@ function AppInitializer({ children }: { children: React.ReactNode }) {
 
     initialize();
   }, [setSettings, setSettingsLoading, setUser, setAuthLoading]);
+
+  useEffect(() => {
+    if (isReady && showOnboarding) {
+      router.replace('/onboarding');
+    }
+  }, [isReady, showOnboarding]);
 
   if (!isReady) {
     return (
@@ -65,6 +79,12 @@ export default function RootLayout() {
           }}
         >
           <Stack.Screen name="(tabs)" />
+          <Stack.Screen
+            name="onboarding/index"
+            options={{
+              animation: 'fade',
+            }}
+          />
           <Stack.Screen
             name="editor/[id]"
             options={{

@@ -1,8 +1,10 @@
 import { useCallback, useState } from 'react';
-import { View, StyleSheet, ScrollView, Pressable, Switch, Alert, Modal } from 'react-native';
+import { View, StyleSheet, ScrollView, Pressable, Switch, Alert, Modal, Share, Linking } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as FileSystem from 'expo-file-system';
 import { Text, Card } from '@/components/common';
 import { colors, spacing, borderRadius, icons } from '@/theme';
 import { useSettingsStore, useAuthStore } from '@/stores';
@@ -192,16 +194,117 @@ export default function SettingsScreen() {
     );
   }, []);
 
-  const handleLogout = useCallback(() => {
+  const handleGitHubDisconnect = useCallback(async () => {
     Alert.alert(
-      'ログアウト',
-      'ログアウトしますか？',
+      'GitHub連携を解除',
+      '連携を解除すると、GitHubへの同期ができなくなります。ローカルデータは保持されます。',
       [
         { text: 'キャンセル', style: 'cancel' },
-        { text: 'ログアウト', style: 'destructive', onPress: () => {} },
+        {
+          text: '解除する',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const newSettings = { ...settings, github: undefined };
+              await saveSettings(newSettings);
+              useSettingsStore.getState().setSettings(newSettings);
+              Alert.alert('完了', 'GitHub連携を解除しました');
+            } catch (err) {
+              console.error('Failed to disconnect GitHub:', err);
+              Alert.alert('エラー', '連携解除に失敗しました');
+            }
+          },
+        },
+      ]
+    );
+  }, [settings]);
+
+  const handleResetOnboarding = useCallback(async () => {
+    Alert.alert(
+      'オンボーディングをリセット',
+      '次回起動時にオンボーディング画面が表示されます。',
+      [
+        { text: 'キャンセル', style: 'cancel' },
+        {
+          text: 'リセット',
+          onPress: async () => {
+            await AsyncStorage.removeItem('hasSeenOnboarding');
+            Alert.alert('完了', '次回起動時にオンボーディングが表示されます');
+          },
+        },
       ]
     );
   }, []);
+
+  const handleClearCache = useCallback(async () => {
+    Alert.alert(
+      'キャッシュをクリア',
+      'エクスポート用の一時ファイルを削除します。',
+      [
+        { text: 'キャンセル', style: 'cancel' },
+        {
+          text: 'クリア',
+          onPress: async () => {
+            try {
+              if (FileSystem.cacheDirectory) {
+                const files = await FileSystem.readDirectoryAsync(FileSystem.cacheDirectory);
+                for (const file of files) {
+                  await FileSystem.deleteAsync(`${FileSystem.cacheDirectory}${file}`, { idempotent: true });
+                }
+              }
+              Alert.alert('完了', 'キャッシュをクリアしました');
+            } catch (err) {
+              console.error('Failed to clear cache:', err);
+              Alert.alert('エラー', 'キャッシュのクリアに失敗しました');
+            }
+          },
+        },
+      ]
+    );
+  }, []);
+
+  const handleShareApp = useCallback(async () => {
+    try {
+      await Share.share({
+        message: 'NotrailNote - AI搭載のMarkdownエディタ。GitHubと連携してノートを安全に管理できます。',
+        title: 'NotrailNoteを共有',
+      });
+    } catch (err) {
+      console.error('Share error:', err);
+    }
+  }, []);
+
+  const handleOpenTerms = useCallback(() => {
+    Linking.openURL('https://notrailnote.app/terms');
+  }, []);
+
+  const handleOpenPrivacy = useCallback(() => {
+    Linking.openURL('https://notrailnote.app/privacy');
+  }, []);
+
+  const handleLogout = useCallback(() => {
+    Alert.alert(
+      'ログアウト',
+      'ログアウトしますか？ローカルデータは保持されます。',
+      [
+        { text: 'キャンセル', style: 'cancel' },
+        {
+          text: 'ログアウト',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const newSettings = { ...settings, github: undefined };
+              await saveSettings(newSettings);
+              useSettingsStore.getState().setSettings(newSettings);
+              Alert.alert('完了', 'ログアウトしました');
+            } catch (err) {
+              console.error('Logout error:', err);
+            }
+          },
+        },
+      ]
+    );
+  }, [settings]);
 
   const fontSizeOptions: PickerOption<UserSettings['fontSize']>[] = [
     { label: '小', value: 'small' },
@@ -232,8 +335,28 @@ export default function SettingsScreen() {
             iconBg="#24292e"
             title="GitHub連携"
             value={isGitHubConnected ? '連携済み' : '未連携'}
-            onPress={handleGitHubConnect}
+            onPress={isGitHubConnected ? undefined : handleGitHubConnect}
+            showChevron={!isGitHubConnected}
           />
+          {isGitHubConnected && (
+            <>
+              {settings.github?.username && (
+                <View style={styles.githubInfo}>
+                  <Feather name="user" size={14} color={colors.text.muted} />
+                  <Text variant="caption" color="secondary">
+                    {settings.github.username}
+                  </Text>
+                </View>
+              )}
+              <SettingsItem
+                icon="log-out"
+                iconBg={colors.error}
+                title="GitHub連携を解除"
+                showChevron={false}
+                onPress={handleGitHubDisconnect}
+              />
+            </>
+          )}
         </View>
 
         {/* Plan Section */}
@@ -302,6 +425,23 @@ export default function SettingsScreen() {
           />
         </View>
 
+        {/* Data Management Section */}
+        <Text variant="micro" color="muted" style={styles.sectionLabel}>データ管理</Text>
+        <View style={styles.section}>
+          <SettingsItem
+            icon="trash-2"
+            iconBg={colors.warning}
+            title="キャッシュをクリア"
+            onPress={handleClearCache}
+          />
+          <SettingsItem
+            icon="refresh-cw"
+            iconBg={colors.info}
+            title="オンボーディングを再表示"
+            onPress={handleResetOnboarding}
+          />
+        </View>
+
         {/* About Section */}
         <Text variant="micro" color="muted" style={styles.sectionLabel}>アプリについて</Text>
         <View style={styles.section}>
@@ -313,14 +453,22 @@ export default function SettingsScreen() {
             showChevron={false}
           />
           <SettingsItem
+            icon="share-2"
+            iconBg={colors.primary}
+            title="アプリを共有"
+            onPress={handleShareApp}
+          />
+          <SettingsItem
             icon="file-text"
             iconBg={colors.gray[400]}
             title="利用規約"
+            onPress={handleOpenTerms}
           />
           <SettingsItem
             icon="shield"
             iconBg={colors.gray[400]}
             title="プライバシーポリシー"
+            onPress={handleOpenPrivacy}
           />
         </View>
 
@@ -330,7 +478,7 @@ export default function SettingsScreen() {
         </Pressable>
 
         <Text variant="micro" color="muted" style={styles.footer}>
-          © 2024 NotrailNote Inc.
+          © 2025 NotrailNote
         </Text>
       </ScrollView>
 
@@ -418,6 +566,16 @@ const styles = StyleSheet.create({
   planInfoRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+  },
+  githubInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[2],
+    paddingHorizontal: spacing[4],
+    paddingVertical: spacing[2],
+    backgroundColor: colors.gray[50],
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border.light,
   },
   logoutButton: {
     backgroundColor: colors.surface.light,

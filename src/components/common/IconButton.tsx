@@ -1,15 +1,16 @@
-import { Pressable, PressableProps, StyleSheet } from 'react-native';
+import { Pressable, PressableProps, StyleSheet, StyleProp, ViewStyle } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { colors, borderRadius, spacing, icons } from '@/theme';
 
 type IconButtonVariant = 'default' | 'primary' | 'ghost';
 type IconButtonSize = 'sm' | 'md' | 'lg';
 
-interface IconButtonProps extends Omit<PressableProps, 'children'> {
+interface IconButtonProps extends Omit<PressableProps, 'children' | 'style'> {
   name: keyof typeof Feather.glyphMap;
   variant?: IconButtonVariant;
   size?: IconButtonSize;
   color?: string;
+  style?: StyleProp<ViewStyle>;
 }
 
 const sizeMap: Record<IconButtonSize, { container: number; icon: number }> = {

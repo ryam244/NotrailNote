@@ -63,7 +63,7 @@ export default function SearchScreen() {
   const [results, setResults] = useState<Document[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
-  const debounceRef = useRef<NodeJS.Timeout>();
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const performSearch = useCallback(async (searchQuery: string) => {
     if (!searchQuery.trim()) {

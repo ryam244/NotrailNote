@@ -4,6 +4,8 @@ import {
   StyleSheet,
   ActivityIndicator,
   View,
+  StyleProp,
+  ViewStyle,
 } from 'react-native';
 import { colors, borderRadius, shadows, spacing, typography } from '@/theme';
 import { Text } from './Text';
@@ -11,7 +13,7 @@ import { Text } from './Text';
 type ButtonVariant = 'primary' | 'secondary' | 'outline' | 'ghost';
 type ButtonSize = 'sm' | 'md' | 'lg';
 
-interface ButtonProps extends Omit<PressableProps, 'children'> {
+interface ButtonProps extends Omit<PressableProps, 'children' | 'style'> {
   variant?: ButtonVariant;
   size?: ButtonSize;
   loading?: boolean;
@@ -19,6 +21,7 @@ interface ButtonProps extends Omit<PressableProps, 'children'> {
   children: React.ReactNode;
   leftIcon?: React.ReactNode;
   rightIcon?: React.ReactNode;
+  style?: StyleProp<ViewStyle>;
 }
 
 const sizeStyles = {

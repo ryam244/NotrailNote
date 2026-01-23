@@ -259,7 +259,8 @@ export default function EditorScreen() {
           setContent(doc.content);
           setCharCount(doc.content.length);
           lastSavedContentRef.current = doc.content;
-          setSyncStatus(doc.githubSync?.syncStatus ?? 'local');
+          const status = doc.githubSync?.syncStatus;
+          setSyncStatus(status === 'synced' || status === 'pending' ? status : 'local');
           setTags(doc.tags ?? []);
         }
       });

@@ -4,7 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import { Text, Card } from '@/components/common';
 import { colors, spacing, borderRadius, icons } from '@/theme';
 import { useSettingsStore, useAuthStore } from '@/stores';

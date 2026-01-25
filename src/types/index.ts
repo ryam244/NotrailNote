@@ -77,15 +77,15 @@ export interface User {
   };
 }
 
-// プラン別の制限
+// プラン別の制限（無料リリース版：全機能開放）
 export const PLAN_LIMITS = {
   free: {
     price: 0,
-    historyRetentionDays: 30,
-    maxDocuments: 10,
-    maxPromptsTemplates: 5,
-    manualSnapshot: false,
-    autoSaveIntervalSec: 30,
+    historyRetentionDays: -1,    // 無制限
+    maxDocuments: -1,            // 無制限
+    maxPromptsTemplates: -1,     // 無制限
+    manualSnapshot: true,        // 有効
+    autoSaveIntervalSec: 10,     // 10秒
   },
   basic: {
     price: 500,

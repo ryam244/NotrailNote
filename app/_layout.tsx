@@ -95,13 +95,6 @@ export default function RootLayout() {
           <Stack.Screen name="diff/[id]" />
           <Stack.Screen name="prompts/index" />
           <Stack.Screen name="auth/github" />
-          <Stack.Screen
-            name="subscription/index"
-            options={{
-              presentation: 'modal',
-              animation: 'slide_from_bottom',
-            }}
-          />
         </Stack>
       </AppInitializer>
     </QueryClientProvider>

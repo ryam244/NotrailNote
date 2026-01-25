@@ -187,7 +187,11 @@ export default function SettingsScreen() {
   }, []);
 
   const handleUpgrade = useCallback(() => {
-    router.push('/subscription');
+    Alert.alert(
+      'プレミアムプラン',
+      '有料プランは今後提供予定です。現在は全ての機能を無料でご利用いただけます。',
+      [{ text: 'OK' }]
+    );
   }, []);
 
   const handleGitHubDisconnect = useCallback(async () => {

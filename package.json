@@ -29,7 +29,7 @@
     "expo-sqlite": "~16.0.5",
     "expo-status-bar": "~3.0.9",
     "expo-web-browser": "~15.0.10",
-    "react": "19.0.0",
+    "react": "19.1.0",
     "react-native": "0.81.5",
     "react-native-markdown-display": "^7.0.2",
     "react-native-safe-area-context": "~5.4.0",
@@ -39,7 +39,7 @@
   },
   "devDependencies": {
     "@babel/core": "^7.26.10",
-    "@types/react": "~19.0.0",
+    "@types/react": "~19.1.0",
     "@typescript-eslint/eslint-plugin": "^7.18.0",
     "@typescript-eslint/parser": "^7.18.0",
     "babel-plugin-module-resolver": "^5.0.2",

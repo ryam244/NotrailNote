@@ -4,7 +4,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as FileSystem from 'expo-file-system/legacy';
 import { Text, Card } from '@/components/common';
 import { colors, spacing, borderRadius, icons } from '@/theme';
 import { useSettingsStore, useAuthStore } from '@/stores';
@@ -239,18 +238,18 @@ export default function SettingsScreen() {
   const handleClearCache = useCallback(async () => {
     Alert.alert(
       'キャッシュをクリア',
-      'エクスポート用の一時ファイルを削除します。',
+      'アプリのキャッシュデータを削除します。',
       [
         { text: 'キャンセル', style: 'cancel' },
         {
           text: 'クリア',
           onPress: async () => {
             try {
-              if (FileSystem.cacheDirectory) {
-                const files = await FileSystem.readDirectoryAsync(FileSystem.cacheDirectory);
-                for (const file of files) {
-                  await FileSystem.deleteAsync(`${FileSystem.cacheDirectory}${file}`, { idempotent: true });
-                }
+              // Clear AsyncStorage cache keys (preserve important data)
+              const keys = await AsyncStorage.getAllKeys();
+              const cacheKeys = keys.filter(key => key.startsWith('cache_'));
+              if (cacheKeys.length > 0) {
+                await AsyncStorage.multiRemove(cacheKeys);
               }
               Alert.alert('完了', 'キャッシュをクリアしました');
             } catch (err) {

@@ -1,5 +1,4 @@
-import * as Sharing from 'expo-sharing';
-import * as FileSystem from 'expo-file-system/legacy';
+import { Share } from 'react-native';
 import type { Document } from '@/types';
 
 export interface ExportOptions {
@@ -128,95 +127,7 @@ function generateHtmlDocument(doc: Document, options: ExportOptions): string {
 </html>`;
 }
 
-// Export document to file and share
-export async function exportDocument(
-  doc: Document,
-  options: ExportOptions
-): Promise<{ success: boolean; error?: string }> {
-  try {
-    let content: string;
-    let filename: string;
-    let mimeType: string;
-
-    // Create safe filename (allow Japanese characters)
-    const safeName = doc.title.replace(/[^a-zA-Z0-9\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]/g, '_') || 'document';
-
-    switch (options.format) {
-      case 'html':
-        content = generateHtmlDocument(doc, options);
-        filename = `${safeName}.html`;
-        mimeType = 'text/html';
-        break;
-      case 'markdown':
-        content = options.includeTitle ? `# ${doc.title}\n\n${doc.content}` : doc.content;
-        filename = `${safeName}.md`;
-        mimeType = 'text/markdown';
-        break;
-      case 'text':
-      default:
-        content = options.includeTitle ? `${doc.title}\n\n${doc.content}` : doc.content;
-        filename = `${safeName}.txt`;
-        mimeType = 'text/plain';
-    }
-
-    console.log('[Export] Starting export:', { format: options.format, filename });
-
-    // Verify cache directory exists
-    if (!FileSystem.cacheDirectory) {
-      console.error('[Export] Cache directory not available');
-      return { success: false, error: 'キャッシュディレクトリが利用できません' };
-    }
-
-    // Write to temp file
-    const fileUri = `${FileSystem.cacheDirectory}${filename}`;
-    console.log('[Export] Writing file to:', fileUri);
-
-    await FileSystem.writeAsStringAsync(fileUri, content, {
-      encoding: FileSystem.EncodingType.UTF8,
-    });
-
-    console.log('[Export] File written successfully');
-
-    // Verify file was created
-    const fileInfo = await FileSystem.getInfoAsync(fileUri);
-    if (!fileInfo.exists) {
-      console.error('[Export] File was not created');
-      return { success: false, error: 'ファイルの作成に失敗しました' };
-    }
-
-    console.log('[Export] File info:', fileInfo);
-
-    // Check if sharing is available
-    const isAvailable = await Sharing.isAvailableAsync();
-    console.log('[Export] Sharing available:', isAvailable);
-
-    if (!isAvailable) {
-      return {
-        success: false,
-        error: '共有機能が利用できません。開発ビルドで試してください。',
-      };
-    }
-
-    // Share the file
-    console.log('[Export] Opening share dialog...');
-    await Sharing.shareAsync(fileUri, {
-      mimeType,
-      dialogTitle: `${doc.title}をエクスポート`,
-    });
-
-    console.log('[Export] Share dialog completed');
-    return { success: true };
-  } catch (error) {
-    console.error('[Export] Error:', error);
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    return {
-      success: false,
-      error: `エクスポートに失敗しました: ${errorMessage}`,
-    };
-  }
-}
-
-// Copy content to clipboard
+// Get content for export based on format
 export function getExportContent(doc: Document, options: ExportOptions): string {
   switch (options.format) {
     case 'html':
@@ -228,3 +139,39 @@ export function getExportContent(doc: Document, options: ExportOptions): string 
       return options.includeTitle ? `${doc.title}\n\n${doc.content}` : doc.content;
   }
 }
+
+// Export document using Share API
+export async function exportDocument(
+  doc: Document,
+  options: ExportOptions
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const content = getExportContent(doc, options);
+
+    console.log('[Export] Starting export:', { format: options.format, title: doc.title });
+
+    // Use Share API
+    const result = await Share.share({
+      message: content,
+      title: doc.title,
+    });
+
+    if (result.action === Share.sharedAction) {
+      console.log('[Export] Share completed');
+      return { success: true };
+    } else if (result.action === Share.dismissedAction) {
+      console.log('[Export] Share dismissed');
+      return { success: true }; // User cancelled, but not an error
+    }
+
+    return { success: true };
+  } catch (error) {
+    console.error('[Export] Error:', error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    return {
+      success: false,
+      error: `エクスポートに失敗しました: ${errorMessage}`,
+    };
+  }
+}
+

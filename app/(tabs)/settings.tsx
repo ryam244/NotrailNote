@@ -453,7 +453,7 @@ export default function SettingsScreen() {
         <View style={styles.section}>
           <View style={styles.appInfoContainer}>
             <Image
-              source={require('@/assets/icon.png')}
+              source={require('../../assets/icon.png')}
               style={styles.appIcon}
             />
             <View style={styles.appInfoText}>

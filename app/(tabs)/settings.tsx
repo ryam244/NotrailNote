@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { View, StyleSheet, ScrollView, Pressable, Switch, Alert, Modal, Share, Linking } from 'react-native';
+import { View, StyleSheet, ScrollView, Pressable, Switch, Alert, Modal, Share, Linking, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
@@ -275,11 +275,11 @@ export default function SettingsScreen() {
   }, []);
 
   const handleOpenTerms = useCallback(() => {
-    Linking.openURL('https://notrailnote.app/terms');
+    Linking.openURL('https://ryam.notion.site/2e913c5594368016b57cf2d4bcf215bc');
   }, []);
 
   const handleOpenPrivacy = useCallback(() => {
-    Linking.openURL('https://notrailnote.app/privacy');
+    Linking.openURL('https://ryam.notion.site/2e913c559436800d92c8e445efc4c6fc');
   }, []);
 
   const handleLogout = useCallback(() => {
@@ -334,29 +334,35 @@ export default function SettingsScreen() {
             icon="github"
             iconBg="#24292e"
             title="GitHub連携"
-            value={isGitHubConnected ? '連携済み' : '未連携'}
-            onPress={isGitHubConnected ? undefined : handleGitHubConnect}
-            showChevron={!isGitHubConnected}
+            value="今後対応予定"
+            showChevron={false}
+            disabled
           />
-          {isGitHubConnected && (
-            <>
-              {settings.github?.username && (
-                <View style={styles.githubInfo}>
-                  <Feather name="user" size={14} color={colors.text.muted} />
-                  <Text variant="caption" color="secondary">
-                    {settings.github.username}
-                  </Text>
-                </View>
-              )}
-              <SettingsItem
-                icon="log-out"
-                iconBg={colors.error}
-                title="GitHub連携を解除"
-                showChevron={false}
-                onPress={handleGitHubDisconnect}
-              />
-            </>
-          )}
+          <View style={styles.comingSoonInfo}>
+            <Feather name="clock" size={14} color={colors.text.muted} />
+            <Text variant="caption" color="muted">
+              GitHub連携機能は今後のアップデートで対応予定です
+            </Text>
+          </View>
+        </View>
+
+        {/* AI Section */}
+        <Text variant="micro" color="muted" style={styles.sectionLabel}>AI機能</Text>
+        <View style={styles.section}>
+          <SettingsItem
+            icon="zap"
+            iconBg={colors.primary}
+            title="AI支援機能"
+            value="今後対応予定"
+            showChevron={false}
+            disabled
+          />
+          <View style={styles.comingSoonInfo}>
+            <Feather name="clock" size={14} color={colors.text.muted} />
+            <Text variant="caption" color="muted">
+              AI支援機能は今後のアップデートで対応予定です
+            </Text>
+          </View>
         </View>
 
         {/* Plan Section */}
@@ -445,6 +451,16 @@ export default function SettingsScreen() {
         {/* About Section */}
         <Text variant="micro" color="muted" style={styles.sectionLabel}>アプリについて</Text>
         <View style={styles.section}>
+          <View style={styles.appInfoContainer}>
+            <Image
+              source={require('@/assets/icon.png')}
+              style={styles.appIcon}
+            />
+            <View style={styles.appInfoText}>
+              <Text variant="h4">NotrailNote</Text>
+              <Text variant="caption" color="secondary">バージョン 1.0.0</Text>
+            </View>
+          </View>
           <SettingsItem
             icon="info"
             iconBg={colors.gray[400]}
@@ -588,6 +604,30 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: spacing[4],
     marginBottom: spacing[8],
+  },
+  appInfoContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: spacing[4],
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border.light,
+  },
+  appIcon: {
+    width: 64,
+    height: 64,
+    borderRadius: borderRadius.xl,
+  },
+  appInfoText: {
+    marginLeft: spacing[4],
+    gap: spacing[1],
+  },
+  comingSoonInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[2],
+    paddingHorizontal: spacing[4],
+    paddingVertical: spacing[3],
+    backgroundColor: colors.gray[50],
   },
   modalOverlay: {
     flex: 1,

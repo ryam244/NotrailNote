@@ -14,7 +14,6 @@ import { Feather } from '@expo/vector-icons';
 import Svg, { Path } from 'react-native-svg';
 import { Text } from '@/components/common';
 import { colors, spacing, borderRadius } from '@/theme';
-import { useSettingsStore } from '@/stores';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -127,26 +126,25 @@ const slides: OnboardingSlide[] = [
     id: '1',
     icon: <Slide1Illustration />,
     title: 'AIでアイデアを加速',
-    description: '生成AIの出力を整理し、あなたのアイデアを次のレベルへ進化させます。',
+    description: '生成AIの出力を整理し、あなたのアイデアを次のレベルへ進化させます。（今後対応予定）',
   },
   {
     id: '2',
     icon: <Slide2Illustration />,
     title: 'GitHubで安全に管理',
-    description: '自前サーバーを持たず、あなたのGitHubに直接保存。バージョン管理も万全です。',
+    description: '自前サーバーを持たず、あなたのGitHubに直接保存。バージョン管理も万全です。（今後対応予定）',
   },
   {
     id: '3',
     icon: <Slide3Illustration />,
     title: 'さあ、始めましょう',
-    description: 'GitHubアカウントでログインして、新しいノートを作成しましょう。',
+    description: 'シンプルで使いやすいMarkdownエディタで、新しいノートを作成しましょう。',
   },
 ];
 
 export default function OnboardingScreen() {
   const [currentIndex, setCurrentIndex] = useState(0);
   const flatListRef = useRef<FlatList>(null);
-  const { settings } = useSettingsStore();
 
   const handleSkip = useCallback(async () => {
     await AsyncStorage.setItem('hasSeenOnboarding', 'true');
@@ -157,20 +155,11 @@ export default function OnboardingScreen() {
     if (currentIndex < slides.length - 1) {
       flatListRef.current?.scrollToIndex({ index: currentIndex + 1 });
     } else {
-      // Last slide - go to GitHub login or home
+      // Last slide - go to home
       await AsyncStorage.setItem('hasSeenOnboarding', 'true');
-      if (settings.github?.accessToken) {
-        router.replace('/(tabs)');
-      } else {
-        router.push('/auth/github');
-      }
+      router.replace('/(tabs)');
     }
-  }, [currentIndex, settings.github?.accessToken]);
-
-  const handleGitHubLogin = useCallback(async () => {
-    await AsyncStorage.setItem('hasSeenOnboarding', 'true');
-    router.push('/auth/github');
-  }, []);
+  }, [currentIndex]);
 
   const onScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const index = Math.round(event.nativeEvent.contentOffset.x / SCREEN_WIDTH);
@@ -198,11 +187,9 @@ export default function OnboardingScreen() {
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerSpacer} />
-        {!isLastSlide && (
-          <Pressable onPress={handleSkip} style={styles.skipButton}>
-            <Text variant="bodyBold" color="secondary">スキップ</Text>
-          </Pressable>
-        )}
+        <Pressable onPress={handleSkip} style={styles.skipButton}>
+          <Text variant="bodyBold" color="secondary">スキップ</Text>
+        </Pressable>
       </View>
 
       {/* Slides */}
@@ -236,11 +223,8 @@ export default function OnboardingScreen() {
 
         {/* Action Button */}
         {isLastSlide ? (
-          <Pressable style={styles.githubButton} onPress={handleGitHubLogin}>
-            <Feather name="github" size={24} color="white" />
-            <Text variant="bodyBold" style={styles.githubButtonText}>
-              GitHubでログイン
-            </Text>
+          <Pressable style={styles.nextButton} onPress={handleNext}>
+            <Text variant="bodyBold" style={styles.nextButtonText}>始める</Text>
           </Pressable>
         ) : (
           <Pressable style={styles.nextButton} onPress={handleNext}>
@@ -255,7 +239,7 @@ export default function OnboardingScreen() {
 
         {isLastSlide && (
           <Text variant="micro" color="muted" style={styles.terms}>
-            続行することで、NotrailNoteの利用規約とプライバシーポリシーに同意したものとみなされます。
+            続行することで、利用規約とプライバシーポリシーに同意したものとみなされます。
           </Text>
         )}
       </View>
